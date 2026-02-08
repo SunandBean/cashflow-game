@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { GameState, GameAction } from '@cashflow/shared';
-import { calculateTotalIncome } from '@cashflow/shared';
+import { calculateTotalIncome, TurnPhase } from '@cashflow/shared';
 import { useGameStore } from '../../stores/gameStore';
 import { formatMoney } from '../../utils/formatters.js';
 
@@ -139,17 +139,30 @@ export function CardModal({ gameState, onDispatch, localPlayerId }: CardModalPro
           Your Cash: {formatMoney(player.cash)}
         </div>
 
-        <div style={styles.buttonRow}>
-          <button style={styles.buyButton} onClick={handleBuy}>
-            Buy
-          </button>
-          <button style={styles.passButton} onClick={handlePass}>
-            Pass
-          </button>
-        </div>
+        {gameState.turnPhase === TurnPhase.WAITING_FOR_DEAL_RESPONSE && gameState.pendingPlayerDeal ? (
+          <div style={{ textAlign: 'center', padding: '16px', background: 'rgba(241,196,15,0.1)', borderRadius: '8px', border: '1px solid rgba(241,196,15,0.3)' }}>
+            <div style={{ color: '#f1c40f', fontWeight: 600, marginBottom: '4px' }}>
+              Waiting for {gameState.players.find(p => p.id === gameState.pendingPlayerDeal!.buyerId)?.name || 'player'} to respond...
+            </div>
+            <div style={{ color: '#888', fontSize: '0.85rem' }}>
+              Offered for {formatMoney(gameState.pendingPlayerDeal.askingPrice)}
+            </div>
+          </div>
+        ) : (
+          <>
+            <div style={styles.buttonRow}>
+              <button style={styles.buyButton} onClick={handleBuy}>
+                Buy
+              </button>
+              <button style={styles.passButton} onClick={handlePass}>
+                Pass
+              </button>
+            </div>
+          </>
+        )}
 
         {/* Sell to Player */}
-        {gameState.players.filter((p) => p.id !== player.id && !p.isBankrupt).length > 0 && (
+        {gameState.turnPhase !== TurnPhase.WAITING_FOR_DEAL_RESPONSE && gameState.players.filter((p) => p.id !== player.id && !p.isBankrupt).length > 0 && (
           <div style={{ marginTop: '12px' }}>
             {!showSellToPlayer ? (
               <button

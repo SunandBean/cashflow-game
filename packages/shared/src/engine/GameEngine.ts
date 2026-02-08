@@ -359,6 +359,7 @@ function handleChooseDealType(
       newState = resolveStockSplit(newState, card.deal);
       return {
         ...newState,
+        activeCard: null,
         turnPhase: TurnPhase.END_OF_TURN,
       };
     }

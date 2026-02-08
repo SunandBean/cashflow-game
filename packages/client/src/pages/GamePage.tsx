@@ -163,11 +163,15 @@ export default function GamePage() {
         <CardModal gameState={gameState} localPlayerId={isOnline ? playerId : undefined} />
       )}
 
-      {/* Deal offer modal for non-current player who received a deal offer */}
-      {isOnline && gameState.pendingPlayerDeal && gameState.pendingPlayerDeal.buyerId === playerId && (
+      {/* Deal offer modal for the buyer who received a deal offer */}
+      {gameState.pendingPlayerDeal && (
+        isOnline
+          ? gameState.pendingPlayerDeal.buyerId === playerId
+          : true
+      ) && (
         <DealOfferModal
           gameState={gameState}
-          localPlayerId={playerId}
+          localPlayerId={isOnline ? playerId : gameState.pendingPlayerDeal.buyerId}
           onDispatch={useGameStore.getState().dispatch}
         />
       )}
