@@ -46,6 +46,33 @@ Given source file path(s), analyze the code and generate comprehensive test file
 - Component tests: mock child components if they're complex (e.g., `vi.mock('../DiceRoller')`)
 - Store tests: use the real store singleton, reset via `store.setState()` in beforeEach
 
+## E2E Testing Patterns (Socket.io)
+
+When writing E2E tests for the server:
+
+1. **Test infrastructure**: Use real Socket.io server on port 0 (auto-assign)
+   - `beforeAll`: create httpServer, SocketIOServer, InMemoryStore, RoomManager, GameManager
+   - `beforeEach`: reset store/managers, re-register connection handlers
+   - `afterEach`: disconnect all clients
+   - `afterAll`: close server
+
+2. **Helper functions** you should create:
+   - `createClient()` → typed Socket.io client
+   - `waitForEvent(socket, event, timeout)` → Promise that resolves on event
+   - `connectClient(client)` → Promise that resolves on 'connect'
+   - `startTwoPlayerGame(c1, c2)` → creates room, joins, readies, starts
+   - `dispatchAction(client, listener, playerId, action)` → emit + wait for state_update
+   - `setSessionState(roomId, modifier)` → `(session as any).state = modifier(state)` for scenario setup
+
+3. **State manipulation**: Use `(session as any).state = {...}` to set up specific board positions,
+   card types, and player states rather than relying on random dice rolls.
+
+4. **Common gotchas**:
+   - GameSession.state is private → use `(session as any).state`
+   - Server overrides dice values → send `[0, 0]` as placeholder
+   - Decks are sent as null arrays to clients (card data hidden)
+   - Use `waitForEvent` with timeout to catch both success and error cases
+
 ## Output
 After writing tests, report:
 - File path created
