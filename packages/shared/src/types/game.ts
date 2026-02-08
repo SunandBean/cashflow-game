@@ -10,6 +10,8 @@ export enum TurnPhase {
   MAKE_DECISION = 'MAKE_DECISION',
   END_OF_TURN = 'END_OF_TURN',
   GAME_OVER = 'GAME_OVER',
+  BANKRUPTCY_DECISION = 'BANKRUPTCY_DECISION',
+  WAITING_FOR_DEAL_RESPONSE = 'WAITING_FOR_DEAL_RESPONSE',
 }
 
 // ── Active Card ──
@@ -24,7 +26,7 @@ export type ActiveCard =
 // ── Game Actions ──
 
 export type GameAction =
-  | { type: 'ROLL_DICE'; playerId: string; diceValues: [number, number] }
+  | { type: 'ROLL_DICE'; playerId: string; diceValues: [number, number]; useBothDice?: boolean }
   | { type: 'CHOOSE_DEAL_TYPE'; playerId: string; dealType: 'small' | 'big' }
   | { type: 'BUY_ASSET'; playerId: string; shares?: number }
   | { type: 'SELL_ASSET'; playerId: string; assetId: string; shares?: number; price?: number }
@@ -39,6 +41,10 @@ export type GameAction =
   | { type: 'CHOOSE_DREAM'; playerId: string; dream: string }
   | { type: 'SELL_TO_MARKET'; playerId: string; assetId: string }
   | { type: 'DECLINE_MARKET'; playerId: string }
+  | { type: 'DECLARE_BANKRUPTCY'; playerId: string }
+  | { type: 'OFFER_DEAL_TO_PLAYER'; playerId: string; targetPlayerId: string; askingPrice: number }
+  | { type: 'ACCEPT_PLAYER_DEAL'; playerId: string }
+  | { type: 'DECLINE_PLAYER_DEAL'; playerId: string }
   ;
 
 // ── Game Log ──
@@ -64,6 +70,13 @@ export interface DeckState {
 
 // ── Game State ──
 
+export interface PendingPlayerDeal {
+  sellerId: string;
+  buyerId: string;
+  card: import('./cards.js').DealCardData;
+  askingPrice: number;
+}
+
 export interface GameState {
   id: string;
   players: Player[];
@@ -75,6 +88,7 @@ export interface GameState {
   log: GameLogEntry[];
   turnNumber: number;
   winner: string | null; // player ID
+  pendingPlayerDeal: PendingPlayerDeal | null;
 }
 
 // ── Game Settings ──

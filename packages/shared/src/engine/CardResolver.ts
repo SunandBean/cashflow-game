@@ -20,6 +20,7 @@ import {
   findStockBySymbol,
   updateStockShares,
   calculateTotalIncome,
+  autoTakeLoanIfNeeded,
 } from './FinancialCalculator.js';
 
 let assetCounter = 0;
@@ -122,6 +123,10 @@ export function resolveBuyDeal(
         player,
       );
     }
+
+    case 'stockSplit':
+      // Stock splits are handled separately via resolveStockSplit, not through buy
+      return state;
   }
 }
 
@@ -157,9 +162,14 @@ export function resolveMarket(state: GameState, card: MarketCard): GameState {
           (a) => isRealEstateAsset(a) && effect.subTypes.includes(a.type),
         );
         if (hasMatchingProperty) {
-          const updatedPlayer = { ...p, cash: p.cash - effect.cost };
+          let updatedPlayer = { ...p, cash: p.cash - effect.cost };
+          const { player: loanedPlayer, amountBorrowed } = autoTakeLoanIfNeeded(updatedPlayer);
+          updatedPlayer = loanedPlayer;
           newState = updatePlayer(newState, i, updatedPlayer);
           newState = addLog(newState, p.id, `Paid $${effect.cost} for property damage: ${card.title}`);
+          if (amountBorrowed > 0) {
+            newState = addLog(newState, p.id, `Forced bank loan of $${amountBorrowed} (cash was negative).`);
+          }
         }
       }
       return { ...newState, turnPhase: TurnPhase.END_OF_TURN };
@@ -169,9 +179,14 @@ export function resolveMarket(state: GameState, card: MarketCard): GameState {
       let newState = state;
       for (let i = 0; i < newState.players.length; i++) {
         const p = newState.players[i];
-        const updatedPlayer = { ...p, cash: p.cash - effect.amount };
+        let updatedPlayer = { ...p, cash: p.cash - effect.amount };
+        const { player: loanedPlayer, amountBorrowed } = autoTakeLoanIfNeeded(updatedPlayer);
+        updatedPlayer = loanedPlayer;
         newState = updatePlayer(newState, i, updatedPlayer);
         newState = addLog(newState, p.id, `Paid $${effect.amount}: ${card.title}`);
+        if (amountBorrowed > 0) {
+          newState = addLog(newState, p.id, `Forced bank loan of $${amountBorrowed} (cash was negative).`);
+        }
       }
       return { ...newState, turnPhase: TurnPhase.END_OF_TURN };
     }
@@ -265,6 +280,58 @@ export function sellStock(
 }
 
 /** Resolve a doodad card (forced expense) */
+/** Resolve a stock split/reverse split for all players */
+export function resolveStockSplit(
+  state: GameState,
+  card: { symbol: string; splitRatio: number },
+): GameState {
+  let newState = state;
+
+  for (let i = 0; i < newState.players.length; i++) {
+    const player = newState.players[i];
+    const updatedAssets: Asset[] = [];
+    let affected = false;
+
+    for (const asset of player.financialStatement.assets) {
+      if (isStockAsset(asset) && asset.symbol === card.symbol) {
+        const newShares = Math.floor(asset.shares * card.splitRatio);
+        if (newShares <= 0) {
+          // Reverse split reduced shares to 0 - remove asset
+          affected = true;
+          continue;
+        }
+        updatedAssets.push({
+          ...asset,
+          shares: newShares,
+          costPerShare: asset.costPerShare / card.splitRatio,
+          dividendPerShare: asset.dividendPerShare / card.splitRatio,
+        });
+        affected = true;
+      } else {
+        updatedAssets.push(asset);
+      }
+    }
+
+    if (affected) {
+      const updatedPlayer = {
+        ...player,
+        financialStatement: {
+          ...player.financialStatement,
+          assets: updatedAssets,
+        },
+      };
+      newState = updatePlayer(newState, i, updatedPlayer);
+      if (card.splitRatio >= 2) {
+        newState = addLog(newState, player.id, `Stock split! ${card.symbol} shares doubled, price halved.`);
+      } else if (card.splitRatio <= 0.5) {
+        newState = addLog(newState, player.id, `Reverse stock split! ${card.symbol} shares halved, price doubled.`);
+      }
+    }
+  }
+
+  return newState;
+}
+
 export function resolveDoodad(state: GameState, card: DoodadCard, playerId: string): GameState {
   const playerIndex = state.players.findIndex((p) => p.id === playerId);
   if (playerIndex === -1) return state;

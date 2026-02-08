@@ -57,7 +57,16 @@ export interface BusinessDeal {
   rule: string;
 }
 
-export type DealCardData = StockDeal | RealEstateDeal | BusinessDeal;
+export interface StockSplitDeal {
+  type: 'stockSplit';
+  name: string;
+  symbol: string;
+  splitRatio: number; // 2 = 2:1 split (shares double, price halves), 0.5 = 1:2 reverse split
+  description: string;
+  rule: string;
+}
+
+export type DealCardData = StockDeal | RealEstateDeal | BusinessDeal | StockSplitDeal;
 
 export interface SmallDealCard {
   id: string;

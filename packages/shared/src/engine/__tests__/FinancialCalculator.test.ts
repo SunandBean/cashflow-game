@@ -66,6 +66,8 @@ function createBasePlayer(overrides?: Partial<Player>): Player {
     downsizedTurnsLeft: 0,
     charityTurnsLeft: 0,
     bankLoanAmount: 0,
+    isBankrupt: false,
+    bankruptTurnsLeft: 0,
     ...overrides,
   };
 }

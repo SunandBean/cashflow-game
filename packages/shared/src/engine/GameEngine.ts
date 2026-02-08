@@ -9,6 +9,7 @@ import type {
   DoodadCard,
   GameLogEntry,
   ProfessionCard,
+  PendingPlayerDeal,
 } from '../types/index.js';
 import { TurnPhase } from '../types/index.js';
 import {
@@ -28,9 +29,12 @@ import {
   payOffBankLoan,
   payOffLiability,
   calculateTotalIncome,
+  autoTakeLoanIfNeeded,
+  getMaxBankLoan,
+  executeBankruptcy,
 } from './FinancialCalculator.js';
 import { movePlayer, getSpaceType, countPayDaysPassed, getDiceTotal, moveFastTrackPlayer, getFastTrackSpaceType, getFastTrackSpace } from './BoardMovement.js';
-import { resolveBuyDeal, resolveMarket, resolveDoodad, sellAssetToMarket, sellStock, resetAssetCounter } from './CardResolver.js';
+import { resolveBuyDeal, resolveMarket, resolveDoodad, resolveStockSplit, sellAssetToMarket, sellStock, resetAssetCounter } from './CardResolver.js';
 import { validateAction } from './validators.js';
 
 // ── Deck helpers ──
@@ -113,6 +117,8 @@ function createPlayer(id: string, name: string, profession: ProfessionCard): Pla
     downsizedTurnsLeft: 0,
     charityTurnsLeft: 0,
     bankLoanAmount: 0,
+    isBankrupt: false,
+    bankruptTurnsLeft: 0,
   };
 }
 
@@ -136,6 +142,7 @@ export function createGame(
     log: [{ timestamp: Date.now(), playerId: 'system', message: 'Game started!' }],
     turnNumber: 1,
     winner: null,
+    pendingPlayerDeal: null,
   };
 }
 
@@ -178,6 +185,14 @@ export function processAction(state: GameState, action: GameAction): GameState {
       return handleDeclineMarket(state, action);
     case 'CHOOSE_DREAM':
       return handleChooseDream(state, action);
+    case 'DECLARE_BANKRUPTCY':
+      return handleDeclareBank(state, action);
+    case 'OFFER_DEAL_TO_PLAYER':
+      return handleOfferDealToPlayer(state, action);
+    case 'ACCEPT_PLAYER_DEAL':
+      return handleAcceptPlayerDeal(state, action);
+    case 'DECLINE_PLAYER_DEAL':
+      return handleDeclinePlayerDeal(state, action);
     default:
       return state;
   }
@@ -196,7 +211,7 @@ function handleRollDice(
     return handleFastTrackRoll(state, action);
   }
 
-  const useTwoDice = player.charityTurnsLeft > 0;
+  const useTwoDice = player.charityTurnsLeft > 0 && action.useBothDice === true;
   const total = getDiceTotal(action.diceValues, useTwoDice);
 
   const oldPosition = player.position;
@@ -307,6 +322,7 @@ function resolveSpace(state: GameState): GameState {
       };
       let newState = updatePlayer(state, state.currentPlayerIndex, updatedPlayer);
       newState = addLog(newState, player.id, `Downsized! Paid total expenses $${totalExpenses} and loses 2 turns.`);
+      newState = applyAutoLoan(newState, state.currentPlayerIndex);
       return { ...newState, turnPhase: TurnPhase.END_OF_TURN };
     }
 
@@ -321,6 +337,22 @@ function handleChooseDealType(
 ): GameState {
   if (action.dealType === 'small') {
     const { card, deck, discard } = drawCard(state.decks.smallDealDeck, state.decks.smallDealDiscard);
+
+    // Check if this is a stock split card - auto-resolve without player decision
+    if (card.deal.type === 'stockSplit') {
+      let newState: GameState = {
+        ...state,
+        activeCard: { type: 'smallDeal', card },
+        decks: { ...state.decks, smallDealDeck: deck, smallDealDiscard: [...discard, card] },
+      };
+      newState = addLog(newState, action.playerId, `Drew stock split card: ${card.title}`);
+      newState = resolveStockSplit(newState, card.deal);
+      return {
+        ...newState,
+        turnPhase: TurnPhase.END_OF_TURN,
+      };
+    }
+
     return {
       ...state,
       activeCard: { type: 'smallDeal', card },
@@ -369,7 +401,7 @@ function handleBuyAsset(
   const updatedBuyPlayer = newState.players[newState.currentPlayerIndex];
   if (updatedBuyPlayer.isInFastTrack) {
     // Calculate the cash flow from the purchased deal
-    if (card.type === 'bigDeal' && card.card.deal.type !== 'stock') {
+    if (card.type === 'bigDeal' && card.card.deal.type !== 'stock' && card.card.deal.type !== 'stockSplit') {
       const dealCashFlow = card.card.deal.cashFlow * 100; // Fast track scale
       const ftPlayer = {
         ...updatedBuyPlayer,
@@ -440,7 +472,8 @@ function handlePayExpense(
 ): GameState {
   if (!state.activeCard || state.activeCard.type !== 'doodad') return state;
 
-  const newState = resolveDoodad(state, state.activeCard.card, action.playerId);
+  let newState = resolveDoodad(state, state.activeCard.card, action.playerId);
+  newState = applyAutoLoan(newState, state.currentPlayerIndex);
   return {
     ...newState,
     activeCard: null,
@@ -463,7 +496,8 @@ function handleAcceptCharity(
   };
 
   let newState = updatePlayer(state, state.currentPlayerIndex, updatedPlayer);
-  newState = addLog(newState, player.id, `Donated $${donation} to charity. Can roll 2 dice for 3 turns.`);
+  newState = addLog(newState, player.id, `Donated $${donation} to charity. Can choose 1 or 2 dice for 3 turns.`);
+  newState = applyAutoLoan(newState, state.currentPlayerIndex);
   return { ...newState, turnPhase: TurnPhase.END_OF_TURN };
 }
 
@@ -515,21 +549,50 @@ function handleEndTurn(
   let nextIndex = (state.currentPlayerIndex + 1) % state.players.length;
   let nextPlayer = newState.players[nextIndex];
 
-  // Skip players who are downsized
+  // Skip players who are downsized, bankrupt-recovering, or eliminated
   let attempts = 0;
-  while (nextPlayer.downsizedTurnsLeft > 0 && attempts < state.players.length) {
-    const updated = { ...nextPlayer, downsizedTurnsLeft: nextPlayer.downsizedTurnsLeft - 1 };
-    newState = updatePlayer(newState, nextIndex, updated);
+  while (attempts < state.players.length) {
+    nextPlayer = newState.players[nextIndex];
 
-    if (updated.downsizedTurnsLeft > 0) {
-      newState = addLog(newState, nextPlayer.id, `Still downsized (${updated.downsizedTurnsLeft} turns left)`);
+    // Skip eliminated (isBankrupt) players entirely
+    if (nextPlayer.isBankrupt) {
       nextIndex = (nextIndex + 1) % state.players.length;
-      nextPlayer = newState.players[nextIndex];
-    } else {
-      newState = addLog(newState, nextPlayer.id, 'Back from being downsized!');
-      break;
+      attempts++;
+      continue;
     }
-    attempts++;
+
+    // Handle bankruptcy recovery turns
+    if (nextPlayer.bankruptTurnsLeft > 0) {
+      const updated = { ...nextPlayer, bankruptTurnsLeft: nextPlayer.bankruptTurnsLeft - 1 };
+      newState = updatePlayer(newState, nextIndex, updated);
+      if (updated.bankruptTurnsLeft > 0) {
+        newState = addLog(newState, nextPlayer.id, `Still recovering from bankruptcy (${updated.bankruptTurnsLeft} turns left)`);
+        nextIndex = (nextIndex + 1) % state.players.length;
+        attempts++;
+        continue;
+      } else {
+        newState = addLog(newState, nextPlayer.id, 'Recovered from bankruptcy!');
+        break;
+      }
+    }
+
+    // Handle downsized turns
+    if (nextPlayer.downsizedTurnsLeft > 0) {
+      const updated = { ...nextPlayer, downsizedTurnsLeft: nextPlayer.downsizedTurnsLeft - 1 };
+      newState = updatePlayer(newState, nextIndex, updated);
+      if (updated.downsizedTurnsLeft > 0) {
+        newState = addLog(newState, nextPlayer.id, `Still downsized (${updated.downsizedTurnsLeft} turns left)`);
+        nextIndex = (nextIndex + 1) % state.players.length;
+        attempts++;
+        continue;
+      } else {
+        newState = addLog(newState, nextPlayer.id, 'Back from being downsized!');
+        break;
+      }
+    }
+
+    // Player is ready to play
+    break;
   }
 
   return {
@@ -550,6 +613,7 @@ function handleCollectPayDay(
 
   let newState = updatePlayer(state, state.currentPlayerIndex, updatedPlayer);
   newState = addLog(newState, player.id, `PayDay! Collected cash flow: $${cashFlow}. Cash: $${updatedPlayer.cash}`);
+  newState = applyAutoLoan(newState, state.currentPlayerIndex);
 
   // Now resolve the space the player actually landed on
   return resolveSpace({ ...newState, turnPhase: TurnPhase.RESOLVE_SPACE });
@@ -618,6 +682,123 @@ function handleChooseDream(
 
   let newState = updatePlayer(state, playerIndex, updatedPlayer);
   return addLog(newState, player.id, `Chose dream: "${action.dream}" and moved to the Fast Track! Fast Track cash flow: $${fastTrackCashFlow.toLocaleString()}/mo`);
+}
+
+function handleDeclareBank(
+  state: GameState,
+  action: Extract<GameAction, { type: 'DECLARE_BANKRUPTCY' }>,
+): GameState {
+  const player = state.players[state.currentPlayerIndex];
+  const { player: bankruptPlayer, eliminated } = executeBankruptcy(player);
+
+  let newState = updatePlayer(state, state.currentPlayerIndex, bankruptPlayer);
+
+  if (eliminated) {
+    newState = addLog(newState, player.id, `${player.name} is bankrupt and eliminated from the game!`);
+    return { ...newState, turnPhase: TurnPhase.END_OF_TURN };
+  }
+
+  newState = addLog(newState, player.id, `${player.name} declared bankruptcy! Assets sold, some debts halved. Loses 2 turns.`);
+  return { ...newState, turnPhase: TurnPhase.END_OF_TURN };
+}
+
+function handleOfferDealToPlayer(
+  state: GameState,
+  action: Extract<GameAction, { type: 'OFFER_DEAL_TO_PLAYER' }>,
+): GameState {
+  if (!state.activeCard) return state;
+  const card = state.activeCard;
+  if (card.type !== 'smallDeal' && card.type !== 'bigDeal') return state;
+
+  const seller = state.players.find((p) => p.id === action.playerId);
+  const buyer = state.players.find((p) => p.id === action.targetPlayerId);
+  if (!seller || !buyer) return state;
+
+  const pendingPlayerDeal: PendingPlayerDeal = {
+    sellerId: action.playerId,
+    buyerId: action.targetPlayerId,
+    card: card.card.deal,
+    askingPrice: action.askingPrice,
+  };
+
+  let newState: GameState = {
+    ...state,
+    pendingPlayerDeal,
+    turnPhase: TurnPhase.WAITING_FOR_DEAL_RESPONSE,
+  };
+
+  return addLog(newState, action.playerId, `${seller.name} offers deal "${card.card.title}" to ${buyer.name} for $${action.askingPrice}`);
+}
+
+function handleAcceptPlayerDeal(
+  state: GameState,
+  action: Extract<GameAction, { type: 'ACCEPT_PLAYER_DEAL' }>,
+): GameState {
+  const deal = state.pendingPlayerDeal;
+  if (!deal) return state;
+
+  const buyerIndex = state.players.findIndex((p) => p.id === deal.buyerId);
+  const sellerIndex = state.players.findIndex((p) => p.id === deal.sellerId);
+  if (buyerIndex === -1 || sellerIndex === -1) return state;
+
+  let buyer = state.players[buyerIndex];
+  let seller = state.players[sellerIndex];
+
+  // Buyer pays asking price to seller
+  buyer = { ...buyer, cash: buyer.cash - deal.askingPrice };
+  seller = { ...seller, cash: seller.cash + deal.askingPrice };
+
+  let newState = updatePlayer(state, buyerIndex, buyer);
+  newState = updatePlayer(newState, sellerIndex, seller);
+
+  // Buyer acquires the deal card's asset (using resolveBuyDeal for the buyer)
+  // We create a temporary card to pass to resolveBuyDeal
+  const tempCard = state.activeCard;
+  if (tempCard && (tempCard.type === 'smallDeal' || tempCard.type === 'bigDeal')) {
+    newState = resolveBuyDeal(newState, tempCard.card, deal.buyerId);
+
+    // Discard the card
+    if (tempCard.type === 'smallDeal') {
+      newState = {
+        ...newState,
+        decks: { ...newState.decks, smallDealDiscard: [...newState.decks.smallDealDiscard, tempCard.card] },
+      };
+    } else {
+      newState = {
+        ...newState,
+        decks: { ...newState.decks, bigDealDiscard: [...newState.decks.bigDealDiscard, tempCard.card] },
+      };
+    }
+  }
+
+  newState = addLog(newState, deal.buyerId, `${buyer.name} accepted the deal for $${deal.askingPrice}!`);
+
+  // Apply auto-loan for buyer if cash went negative
+  newState = applyAutoLoan(newState, buyerIndex);
+
+  return {
+    ...newState,
+    activeCard: null,
+    pendingPlayerDeal: null,
+    turnPhase: TurnPhase.END_OF_TURN,
+  };
+}
+
+function handleDeclinePlayerDeal(
+  state: GameState,
+  action: Extract<GameAction, { type: 'DECLINE_PLAYER_DEAL' }>,
+): GameState {
+  const deal = state.pendingPlayerDeal;
+  if (!deal) return state;
+
+  const buyer = state.players.find((p) => p.id === deal.buyerId);
+  let newState: GameState = {
+    ...state,
+    pendingPlayerDeal: null,
+    turnPhase: TurnPhase.MAKE_DECISION, // Return to seller's MAKE_DECISION
+  };
+
+  return addLog(newState, deal.buyerId, `${buyer?.name || 'Player'} declined the deal offer.`);
 }
 
 // ── Fast Track handlers ──
@@ -821,6 +1002,10 @@ export function getValidActions(state: GameState): GameAction['type'][] {
         if (state.activeCard.type === 'smallDeal' || state.activeCard.type === 'bigDeal') {
           actions.push('BUY_ASSET');
           actions.push('SKIP_DEAL');
+          // Can offer to another player if multiplayer
+          if (state.players.filter((p) => !p.isBankrupt).length > 1) {
+            actions.push('OFFER_DEAL_TO_PLAYER');
+          }
         } else if (state.activeCard.type === 'doodad') {
           actions.push('PAY_EXPENSE');
         } else if (state.activeCard.type === 'market') {
@@ -829,6 +1014,14 @@ export function getValidActions(state: GameState): GameAction['type'][] {
         }
       }
       actions.push('END_TURN');
+      break;
+
+    case TurnPhase.WAITING_FOR_DEAL_RESPONSE:
+      // Only the target buyer can respond
+      if (state.pendingPlayerDeal && state.pendingPlayerDeal.buyerId === player.id) {
+        actions.push('ACCEPT_PLAYER_DEAL');
+        actions.push('DECLINE_PLAYER_DEAL');
+      }
       break;
 
     case TurnPhase.END_OF_TURN:
@@ -840,6 +1033,10 @@ export function getValidActions(state: GameState): GameAction['type'][] {
       }
       break;
 
+    case TurnPhase.BANKRUPTCY_DECISION:
+      actions.push('DECLARE_BANKRUPTCY');
+      break;
+
     case TurnPhase.GAME_OVER:
       break;
   }
@@ -848,6 +1045,24 @@ export function getValidActions(state: GameState): GameAction['type'][] {
 }
 
 // ── Helpers ──
+
+/** Apply auto-loan if player has negative cash, and log the event */
+function applyAutoLoan(state: GameState, playerIndex: number): GameState {
+  const player = state.players[playerIndex];
+  const { player: updated, amountBorrowed } = autoTakeLoanIfNeeded(player);
+  if (amountBorrowed === 0) return state;
+  let newState = updatePlayer(state, playerIndex, updated);
+  return addLog(newState, player.id, `Forced bank loan of $${amountBorrowed} (cash was negative). Monthly payment: $${Math.ceil((updated.bankLoanAmount * 0.1) / 12)}`);
+}
+
+/** Apply auto-loan to all players (for market card effects that affect everyone) */
+function applyAutoLoanAllPlayers(state: GameState): GameState {
+  let newState = state;
+  for (let i = 0; i < newState.players.length; i++) {
+    newState = applyAutoLoan(newState, i);
+  }
+  return newState;
+}
 
 function updatePlayer(state: GameState, index: number, player: Player): GameState {
   const players = [...state.players];

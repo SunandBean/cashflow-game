@@ -220,6 +220,106 @@ export function payOffLiability(player: Player, liabilityName: string, amount: n
   };
 }
 
+/** Auto-take bank loan in $1,000 increments if player cash is negative (forced loan) */
+export function autoTakeLoanIfNeeded(player: Player): { player: Player; amountBorrowed: number } {
+  if (player.cash >= 0) return { player, amountBorrowed: 0 };
+  const loanAmount = Math.ceil(Math.abs(player.cash) / 1000) * 1000;
+  return {
+    player: {
+      ...player,
+      cash: player.cash + loanAmount,
+      bankLoanAmount: player.bankLoanAmount + loanAmount,
+    },
+    amountBorrowed: loanAmount,
+  };
+}
+
+/** Calculate the max voluntary bank loan that keeps monthly cash flow > 0 */
+export function getMaxBankLoan(player: Player): number {
+  const currentCashFlow = calculateCashFlow(player);
+  if (currentCashFlow <= 0) return 0;
+  // Each $1,000 of bank loan adds $1,000 * 0.1 / 12 ≈ $8.33 monthly payment
+  const monthlyPaymentPer1000 = (1000 * 0.1) / 12;
+  // Cash flow must stay > 0 after the new loan payment
+  const maxLoans = Math.floor((currentCashFlow - 1) / monthlyPaymentPer1000);
+  return Math.max(0, Math.floor(maxLoans) * 1000);
+}
+
+/** Execute bankruptcy procedure:
+ * 1. Sell all assets at half of down payment
+ * 2. Halve car loan, credit card, and retail debt
+ * 3. Keep home mortgage and school loan
+ * 4. Recalculate cash flow
+ * 5. If cash flow still < 0 → eliminated
+ * 6. Otherwise → 2 turn skip
+ */
+export function executeBankruptcy(player: Player): { player: Player; eliminated: boolean } {
+  let p = { ...player };
+  let fs = { ...p.financialStatement };
+
+  // 1. Sell all assets at half down payment
+  for (const asset of fs.assets) {
+    if (isRealEstateAsset(asset) || isBusinessAsset(asset)) {
+      const salePrice = Math.floor(asset.downPayment / 2);
+      p.cash += salePrice;
+      // Mortgage on the asset is forgiven (asset removed)
+    } else if (isStockAsset(asset)) {
+      // Stocks sold at 0 in bankruptcy (worthless forced sale)
+      // In real game, stocks have no down payment concept
+    }
+  }
+  fs.assets = [];
+
+  // 2. Halve car loan and credit card balances & payments
+  const halvableDebts = ['Car Loan', 'Credit Card'];
+  fs.liabilities = fs.liabilities.map((l) => {
+    if (halvableDebts.includes(l.name)) {
+      const newBalance = Math.floor(l.balance / 2);
+      const newPayment = Math.floor(l.payment / 2);
+      return { ...l, balance: newBalance, payment: newPayment };
+    }
+    return l;
+  });
+
+  // Update expenses to match halved liabilities
+  fs.expenses = {
+    ...fs.expenses,
+    carLoanPayment: Math.floor(fs.expenses.carLoanPayment / 2),
+    creditCardPayment: Math.floor(fs.expenses.creditCardPayment / 2),
+  };
+
+  // Remove any liability with 0 balance
+  fs.liabilities = fs.liabilities.filter((l) => l.balance > 0);
+  // If car loan was fully eliminated, zero the expense
+  if (!fs.liabilities.find((l) => l.name === 'Car Loan')) {
+    fs.expenses = { ...fs.expenses, carLoanPayment: 0 };
+  }
+  if (!fs.liabilities.find((l) => l.name === 'Credit Card')) {
+    fs.expenses = { ...fs.expenses, creditCardPayment: 0 };
+  }
+
+  // 3. Home mortgage and school loan stay as-is
+  // 4. Bank loan stays as-is
+
+  p.financialStatement = fs;
+
+  // 5. Recalculate cash flow
+  const totalIncome = calculateTotalIncome(p.financialStatement);
+  const totalExpenses = calculateTotalExpenses(p);
+  const newCashFlow = totalIncome - totalExpenses;
+
+  if (newCashFlow < 0) {
+    // Eliminated
+    return { player: { ...p, isBankrupt: true, financialStatement: fs }, eliminated: true };
+  }
+
+  // 6. Survive with 2 turn skip
+  return {
+    player: { ...p, bankruptTurnsLeft: 2, financialStatement: fs },
+    eliminated: false,
+  };
+}
+
 function zeroExpenseForLiability(
   expenses: Player['financialStatement']['expenses'],
   liabilityName: string,

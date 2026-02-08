@@ -1,6 +1,6 @@
 import type { GameState, GameAction } from '../types/index.js';
 import { TurnPhase } from '../types/index.js';
-import { calculateTotalIncome } from './FinancialCalculator.js';
+import { calculateTotalIncome, getMaxBankLoan } from './FinancialCalculator.js';
 
 export interface ValidationResult {
   valid: boolean;
@@ -22,7 +22,9 @@ export function validateAction(state: GameState, action: GameAction): Validation
   }
 
   // Check it's the right player's turn (for most actions)
-  if (action.type !== 'SELL_TO_MARKET' && action.type !== 'DECLINE_MARKET') {
+  // Some actions can be performed by non-current players
+  const nonTurnActions = ['SELL_TO_MARKET', 'DECLINE_MARKET', 'ACCEPT_PLAYER_DEAL', 'DECLINE_PLAYER_DEAL'];
+  if (!nonTurnActions.includes(action.type)) {
     if (!isPlayerTurn(state, action.playerId)) {
       return { valid: false, error: 'Not your turn' };
     }
@@ -81,6 +83,12 @@ export function validateAction(state: GameState, action: GameAction): Validation
       if (action.amount <= 0 || action.amount % 1000 !== 0) {
         return { valid: false, error: 'Loan amount must be a positive multiple of $1,000' };
       }
+      {
+        const maxLoan = getMaxBankLoan(player);
+        if (action.amount > maxLoan) {
+          return { valid: false, error: `Loan amount exceeds maximum of $${maxLoan} (cash flow must stay positive)` };
+        }
+      }
       return { valid: true };
 
     case 'PAY_OFF_LOAN':
@@ -97,6 +105,11 @@ export function validateAction(state: GameState, action: GameAction): Validation
 
     case 'END_TURN':
       if (state.turnPhase !== TurnPhase.END_OF_TURN && state.turnPhase !== TurnPhase.MAKE_DECISION) {
+        // Allow END_TURN from ROLL_DICE for downsized players (they skip their turn)
+        const currentPlayer = state.players[state.currentPlayerIndex];
+        if (state.turnPhase === TurnPhase.ROLL_DICE && currentPlayer?.downsizedTurnsLeft > 0) {
+          return { valid: true };
+        }
         return { valid: false, error: 'Cannot end turn in current phase' };
       }
       return { valid: true };
@@ -123,6 +136,54 @@ export function validateAction(state: GameState, action: GameAction): Validation
     case 'DECLINE_MARKET':
       if (state.turnPhase !== TurnPhase.MAKE_DECISION) {
         return { valid: false, error: 'Cannot handle market action in current phase' };
+      }
+      return { valid: true };
+
+    case 'DECLARE_BANKRUPTCY':
+      if (state.turnPhase !== TurnPhase.BANKRUPTCY_DECISION) {
+        return { valid: false, error: 'Cannot declare bankruptcy in current phase' };
+      }
+      return { valid: true };
+
+    case 'OFFER_DEAL_TO_PLAYER':
+      if (state.turnPhase !== TurnPhase.MAKE_DECISION) {
+        return { valid: false, error: 'Cannot offer deal in current phase' };
+      }
+      if (!state.activeCard) {
+        return { valid: false, error: 'No active card to offer' };
+      }
+      if (action.askingPrice <= 0) {
+        return { valid: false, error: 'Asking price must be positive' };
+      }
+      if (action.targetPlayerId === action.playerId) {
+        return { valid: false, error: 'Cannot sell to yourself' };
+      }
+      {
+        const target = state.players.find((p) => p.id === action.targetPlayerId);
+        if (!target) {
+          return { valid: false, error: 'Target player not found' };
+        }
+        if (target.isBankrupt) {
+          return { valid: false, error: 'Cannot sell to a bankrupt player' };
+        }
+      }
+      return { valid: true };
+
+    case 'ACCEPT_PLAYER_DEAL':
+      if (state.turnPhase !== TurnPhase.WAITING_FOR_DEAL_RESPONSE) {
+        return { valid: false, error: 'No pending deal to accept' };
+      }
+      if (!state.pendingPlayerDeal || state.pendingPlayerDeal.buyerId !== action.playerId) {
+        return { valid: false, error: 'You are not the deal recipient' };
+      }
+      return { valid: true };
+
+    case 'DECLINE_PLAYER_DEAL':
+      if (state.turnPhase !== TurnPhase.WAITING_FOR_DEAL_RESPONSE) {
+        return { valid: false, error: 'No pending deal to decline' };
+      }
+      if (!state.pendingPlayerDeal || state.pendingPlayerDeal.buyerId !== action.playerId) {
+        return { valid: false, error: 'You are not the deal recipient' };
       }
       return { valid: true };
 

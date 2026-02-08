@@ -82,4 +82,6 @@ export interface Player {
   downsizedTurnsLeft: number;
   charityTurnsLeft: number;
   bankLoanAmount: number;
+  isBankrupt: boolean;
+  bankruptTurnsLeft: number;
 }
