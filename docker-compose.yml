@@ -1,0 +1,30 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      target: server
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./packages/shared/src:/app/packages/shared/src
+      - ./packages/server/src:/app/packages/server/src
+    environment:
+      - PORT=3001
+    restart: unless-stopped
+
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      target: client
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./packages/shared/src:/app/packages/shared/src
+      - ./packages/client/src:/app/packages/client/src
+    environment:
+      - VITE_SERVER_URL=http://server:3001
+    depends_on:
+      - server
+    restart: unless-stopped

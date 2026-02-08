@@ -1,0 +1,30 @@
+# ── Base: shared dependencies ──
+FROM node:20-slim AS base
+
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+
+WORKDIR /app
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json tsconfig.base.json ./
+COPY packages/shared/package.json packages/shared/tsconfig.json ./packages/shared/
+COPY packages/server/package.json packages/server/tsconfig.json ./packages/server/
+COPY packages/client/package.json packages/client/tsconfig.json packages/client/vite.config.ts packages/client/index.html ./packages/client/
+
+RUN pnpm install --frozen-lockfile
+
+COPY packages/shared/src ./packages/shared/src
+COPY packages/server/src ./packages/server/src
+COPY packages/client/src ./packages/client/src
+
+# Build shared package so dist/ exists for dependents
+RUN pnpm --filter @cashflow/shared build
+
+# ── Server (dev) ──
+FROM base AS server
+EXPOSE 3001
+CMD ["pnpm", "--filter", "@cashflow/server", "dev"]
+
+# ── Client (dev) ──
+FROM base AS client
+EXPOSE 3000
+CMD ["pnpm", "--filter", "@cashflow/client", "dev", "--host", "0.0.0.0"]
