@@ -8,6 +8,7 @@ import { formatPhase } from '../utils/formatters.js';
 import { FinancialStatement } from '../components/financial/FinancialStatement.js';
 import { DiceRoller } from '../components/board/DiceRoller.js';
 import { CardModal } from '../components/cards/CardModal.js';
+import { DealOfferModal } from '../components/cards/DealOfferModal.js';
 
 interface RoomPlayer {
   id: string;
@@ -207,9 +208,9 @@ export default function CompanionPage() {
   const currentPlayerColor =
     PLAYER_COLORS[gameState.currentPlayerIndex % PLAYER_COLORS.length];
 
-  const handleRoll = (values: [number, number]) => {
+  const handleRoll = (values: [number, number], useBothDice?: boolean) => {
     // In online mode, send dummy dice values; server generates real ones
-    dispatch({ type: 'ROLL_DICE', playerId, diceValues: [0, 0] });
+    dispatch({ type: 'ROLL_DICE', playerId, diceValues: [0, 0], useBothDice });
     void values; // suppress unused warning
   };
 
@@ -272,7 +273,7 @@ export default function CompanionPage() {
       {isMyTurn && (
         <div style={styles.actionSection}>
           {validActions.includes('ROLL_DICE') && (
-            <DiceRoller onRoll={handleRoll} />
+            <DiceRoller onRoll={handleRoll} charityActive={currentPlayer.charityTurnsLeft > 0} />
           )}
 
           {validActions.includes('COLLECT_PAY_DAY') && (
@@ -365,7 +366,16 @@ export default function CompanionPage() {
 
       {/* Card modal */}
       {gameState.activeCard && isMyTurn && (
-        <CardModal gameState={gameState} onDispatch={dispatch} />
+        <CardModal gameState={gameState} onDispatch={dispatch} localPlayerId={playerId} />
+      )}
+
+      {/* Deal offer modal (when another player offers us a deal) */}
+      {gameState.pendingPlayerDeal && gameState.pendingPlayerDeal.buyerId === playerId && (
+        <DealOfferModal
+          gameState={gameState}
+          localPlayerId={playerId}
+          onDispatch={dispatch}
+        />
       )}
 
       {/* Financial statement (always visible) */}

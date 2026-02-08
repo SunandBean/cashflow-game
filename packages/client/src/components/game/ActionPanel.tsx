@@ -25,12 +25,12 @@ export function ActionPanel({ gameState, isOnline = false, isMyTurn = true, loca
   // In online mode, the dice values are irrelevant (server overrides).
   // We still dispatch the ROLL_DICE action but with placeholder values.
   const handleRoll = useCallback(
-    (values: [number, number]) => {
+    (values: [number, number], useBothDice?: boolean) => {
       if (isOnline) {
         // In online mode, send dummy dice values; the server generates the real ones
-        dispatch({ type: 'ROLL_DICE', playerId: player.id, diceValues: [0, 0] });
+        dispatch({ type: 'ROLL_DICE', playerId: player.id, diceValues: [0, 0], useBothDice });
       } else {
-        dispatch({ type: 'ROLL_DICE', playerId: player.id, diceValues: values });
+        dispatch({ type: 'ROLL_DICE', playerId: player.id, diceValues: values, useBothDice });
       }
     },
     [dispatch, player.id, isOnline],
@@ -106,7 +106,7 @@ export function ActionPanel({ gameState, isOnline = false, isMyTurn = true, loca
 
       {/* Dice roller for ROLL_DICE phase */}
       {!actionsDisabled && validActions.includes('ROLL_DICE') && (
-        <DiceRoller onRoll={handleRoll} />
+        <DiceRoller onRoll={handleRoll} charityActive={player.charityTurnsLeft > 0} />
       )}
 
       {/* PayDay Collection */}
@@ -139,6 +139,21 @@ export function ActionPanel({ gameState, isOnline = false, isMyTurn = true, loca
           </button>
           <button style={styles.ghostButton} onClick={handleDeclineCharity}>
             Decline Charity
+          </button>
+        </div>
+      )}
+
+      {/* Bankruptcy */}
+      {!actionsDisabled && validActions.includes('DECLARE_BANKRUPTCY') && (
+        <div style={styles.buttonGroup}>
+          <div style={{ textAlign: 'center', color: '#e74c3c', fontSize: '0.9rem', fontWeight: 600 }}>
+            Cash flow is negative and you cannot take more loans.
+          </div>
+          <button
+            style={{ ...styles.primaryButton, background: 'linear-gradient(135deg, #e74c3c, #c0392b)' }}
+            onClick={() => dispatch({ type: 'DECLARE_BANKRUPTCY', playerId: player.id })}
+          >
+            Declare Bankruptcy
           </button>
         </div>
       )}

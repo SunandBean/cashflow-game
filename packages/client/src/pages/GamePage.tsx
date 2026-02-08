@@ -9,6 +9,7 @@ import { ActionPanel } from '../components/game/ActionPanel';
 import { GameLog } from '../components/game/GameLog';
 import { DevicePassScreen } from '../components/game/DevicePassScreen';
 import { CardModal } from '../components/cards/CardModal';
+import { DealOfferModal } from '../components/cards/DealOfferModal';
 import { FinancialStatement } from '../components/financial/FinancialStatement';
 import { DreamSelector } from '../components/game/DreamSelector';
 import { EscapeCelebration } from '../components/game/EscapeCelebration';
@@ -159,7 +160,16 @@ export default function GamePage() {
       </div>
 
       {gameState.activeCard && isMyTurn && (
-        <CardModal gameState={gameState} />
+        <CardModal gameState={gameState} localPlayerId={isOnline ? playerId : undefined} />
+      )}
+
+      {/* Deal offer modal for non-current player who received a deal offer */}
+      {isOnline && gameState.pendingPlayerDeal && gameState.pendingPlayerDeal.buyerId === playerId && (
+        <DealOfferModal
+          gameState={gameState}
+          localPlayerId={playerId}
+          onDispatch={useGameStore.getState().dispatch}
+        />
       )}
 
       {/* Only show device pass screen in local mode */}

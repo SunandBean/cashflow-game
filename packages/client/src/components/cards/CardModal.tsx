@@ -5,6 +5,7 @@ import { useGameStore } from '../../stores/gameStore';
 interface CardModalProps {
   gameState: GameState;
   onDispatch?: (action: GameAction) => void;
+  localPlayerId?: string;
 }
 
 function formatMoney(amount: number): string {
@@ -12,10 +13,13 @@ function formatMoney(amount: number): string {
   return `${prefix}${Math.abs(amount).toLocaleString()}`;
 }
 
-export function CardModal({ gameState, onDispatch }: CardModalProps) {
+export function CardModal({ gameState, onDispatch, localPlayerId }: CardModalProps) {
   const storeDispatch = useGameStore((s) => s.dispatch);
   const dispatch = onDispatch ?? storeDispatch;
   const [shares, setShares] = useState(1);
+  const [showSellToPlayer, setShowSellToPlayer] = useState(false);
+  const [selectedTargetId, setSelectedTargetId] = useState('');
+  const [askingPrice, setAskingPrice] = useState(0);
   const activeCard = gameState.activeCard;
   const player = gameState.players[gameState.currentPlayerIndex];
 
@@ -146,6 +150,63 @@ export function CardModal({ gameState, onDispatch }: CardModalProps) {
             Pass
           </button>
         </div>
+
+        {/* Sell to Player */}
+        {gameState.players.filter((p) => p.id !== player.id && !p.isBankrupt).length > 0 && (
+          <div style={{ marginTop: '12px' }}>
+            {!showSellToPlayer ? (
+              <button
+                style={{ ...styles.passButton, width: '100%', color: '#f1c40f', borderColor: 'rgba(241,196,15,0.3)' }}
+                onClick={() => setShowSellToPlayer(true)}
+              >
+                Sell to Player
+              </button>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px' }}>
+                <select
+                  value={selectedTargetId}
+                  onChange={(e) => setSelectedTargetId(e.target.value)}
+                  style={{ padding: '8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.08)', color: '#e0e0e0', fontSize: '0.9rem' }}
+                >
+                  <option value="">Select player...</option>
+                  {gameState.players
+                    .filter((p) => p.id !== player.id && !p.isBankrupt)
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                </select>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ color: '#aaa', fontSize: '0.85rem' }}>Price: $</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={askingPrice}
+                    onChange={(e) => setAskingPrice(Math.max(0, parseInt(e.target.value) || 0))}
+                    style={{ ...styles.numberInput, flex: 1 }}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    style={{ ...styles.buyButton, flex: 1, background: 'linear-gradient(135deg, #f1c40f, #d4ac0d)', opacity: (!selectedTargetId || askingPrice <= 0) ? 0.5 : 1 }}
+                    disabled={!selectedTargetId || askingPrice <= 0}
+                    onClick={() => {
+                      dispatch({ type: 'OFFER_DEAL_TO_PLAYER', playerId: player.id, targetPlayerId: selectedTargetId, askingPrice });
+                      setShowSellToPlayer(false);
+                    }}
+                  >
+                    Offer Deal
+                  </button>
+                  <button
+                    style={{ ...styles.passButton, flex: 1 }}
+                    onClick={() => setShowSellToPlayer(false)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   };

@@ -1,8 +1,9 @@
 import { useState, useCallback } from 'react';
 
 interface DiceRollerProps {
-  onRoll: (values: [number, number]) => void;
+  onRoll: (values: [number, number], useBothDice?: boolean) => void;
   disabled?: boolean;
+  charityActive?: boolean;
 }
 
 function DiceFace({ value, size = 60 }: { value: number; size?: number }) {
@@ -41,11 +42,11 @@ function DiceFace({ value, size = 60 }: { value: number; size?: number }) {
   );
 }
 
-export function DiceRoller({ onRoll, disabled }: DiceRollerProps) {
+export function DiceRoller({ onRoll, disabled, charityActive }: DiceRollerProps) {
   const [values, setValues] = useState<[number, number]>([1, 1]);
   const [rolling, setRolling] = useState(false);
 
-  const roll = useCallback(() => {
+  const doRoll = useCallback((useBothDice: boolean) => {
     if (disabled || rolling) return;
     setRolling(true);
 
@@ -65,7 +66,7 @@ export function DiceRoller({ onRoll, disabled }: DiceRollerProps) {
         ];
         setValues(final);
         setRolling(false);
-        onRoll(final);
+        onRoll(final, useBothDice);
       }
     }, 50);
   }, [disabled, rolling, onRoll]);
@@ -76,16 +77,42 @@ export function DiceRoller({ onRoll, disabled }: DiceRollerProps) {
         <DiceFace value={values[0]} />
         <DiceFace value={values[1]} />
       </div>
-      <button
-        style={{
-          ...styles.rollButton,
-          ...(disabled ? styles.rollButtonDisabled : {}),
-        }}
-        onClick={roll}
-        disabled={disabled || rolling}
-      >
-        {rolling ? 'Rolling...' : 'Roll Dice'}
-      </button>
+      {charityActive ? (
+        <div style={styles.charityButtons}>
+          <button
+            style={{
+              ...styles.rollButton,
+              ...(disabled ? styles.rollButtonDisabled : {}),
+            }}
+            onClick={() => doRoll(false)}
+            disabled={disabled || rolling}
+          >
+            {rolling ? 'Rolling...' : 'Roll 1 Die'}
+          </button>
+          <button
+            style={{
+              ...styles.rollButton,
+              ...styles.rollButtonCharity,
+              ...(disabled ? styles.rollButtonDisabled : {}),
+            }}
+            onClick={() => doRoll(true)}
+            disabled={disabled || rolling}
+          >
+            {rolling ? 'Rolling...' : 'Roll 2 Dice'}
+          </button>
+        </div>
+      ) : (
+        <button
+          style={{
+            ...styles.rollButton,
+            ...(disabled ? styles.rollButtonDisabled : {}),
+          }}
+          onClick={() => doRoll(false)}
+          disabled={disabled || rolling}
+        >
+          {rolling ? 'Rolling...' : 'Roll Dice'}
+        </button>
+      )}
     </div>
   );
 }
@@ -121,5 +148,12 @@ const styles: Record<string, React.CSSProperties> = {
     background: '#444',
     color: '#888',
     cursor: 'not-allowed',
+  },
+  rollButtonCharity: {
+    background: 'linear-gradient(135deg, #FF9800, #F57C00)',
+  },
+  charityButtons: {
+    display: 'flex',
+    gap: '8px',
   },
 };
