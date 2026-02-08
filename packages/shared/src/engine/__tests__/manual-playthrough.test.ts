@@ -300,8 +300,8 @@ describe('Full Game Playthrough - Feature Verification', () => {
       currentPlayerIndex: 0,
       decks: {
         ...state.decks,
-        smallDeals: [],
-        smallDealsDiscard: [],
+        smallDealDeck: [],
+        smallDealDiscard: [],
       },
     };
 
