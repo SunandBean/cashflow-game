@@ -596,6 +596,7 @@ describe('E2E Game Flow', () => {
                   ...p.financialStatement,
                   assets: [
                     {
+                      kind: 'realEstate',
                       id: 'asset-house',
                       name: 'Small House',
                       type: 'house',

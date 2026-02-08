@@ -34,7 +34,7 @@ import {
   executeBankruptcy,
 } from './FinancialCalculator.js';
 import { movePlayer, getSpaceType, countPayDaysPassed, getDiceTotal, moveFastTrackPlayer, getFastTrackSpaceType, getFastTrackSpace } from './BoardMovement.js';
-import { resolveBuyDeal, resolveMarket, resolveDoodad, resolveStockSplit, sellAssetToMarket, sellStock, resetAssetCounter } from './CardResolver.js';
+import { resolveBuyDeal, resolveMarket, resolveDoodad, resolveStockSplit, sellAssetToMarket, sellStock } from './CardResolver.js';
 import { validateAction } from './validators.js';
 
 // ── Deck helpers ──
@@ -48,7 +48,10 @@ function shuffle<T>(array: T[]): T[] {
   return arr;
 }
 
-function drawCard<T>(deck: T[], discard: T[]): { card: T; deck: T[]; discard: T[] } {
+function drawCard<T>(deck: T[], discard: T[]): { card: T; deck: T[]; discard: T[] } | null {
+  if (deck.length === 0 && discard.length === 0) {
+    return null;
+  }
   if (deck.length === 0) {
     // Reshuffle discard pile
     const reshuffled = shuffle(discard);
@@ -128,7 +131,6 @@ export function createGame(
   playerInfos: { id: string; name: string }[],
   professions: ProfessionCard[],
 ): GameState {
-  resetAssetCounter();
   const players = playerInfos.map((info, i) => createPlayer(info.id, info.name, professions[i]));
 
   return {
@@ -143,6 +145,8 @@ export function createGame(
     turnNumber: 1,
     winner: null,
     pendingPlayerDeal: null,
+    nextAssetId: 1,
+    payDaysRemaining: 0,
   };
 }
 
@@ -243,8 +247,8 @@ function handleRollDice(
     newState = {
       ...newState,
       turnPhase: TurnPhase.PAY_DAY_COLLECTION,
+      payDaysRemaining: payDays,
     };
-    // Store how many paydays to collect
     return addLog(newState, player.id, `Passed ${payDays} PayDay${payDays > 1 ? 's' : ''}!`);
   }
 
@@ -264,7 +268,9 @@ function resolveSpace(state: GameState): GameState {
       };
 
     case 'Market': {
-      const { card, deck, discard } = drawCard(state.decks.marketDeck, state.decks.marketDiscard);
+      const drawn = drawCard(state.decks.marketDeck, state.decks.marketDiscard);
+      if (!drawn) return { ...state, turnPhase: TurnPhase.END_OF_TURN };
+      const { card, deck, discard } = drawn;
       const newState: GameState = {
         ...state,
         activeCard: { type: 'market', card },
@@ -274,7 +280,9 @@ function resolveSpace(state: GameState): GameState {
     }
 
     case 'Doodad': {
-      const { card, deck, discard } = drawCard(state.decks.doodadDeck, state.decks.doodadDiscard);
+      const drawn = drawCard(state.decks.doodadDeck, state.decks.doodadDiscard);
+      if (!drawn) return { ...state, turnPhase: TurnPhase.END_OF_TURN };
+      const { card, deck, discard } = drawn;
       let newState: GameState = {
         ...state,
         activeCard: { type: 'doodad', card },
@@ -336,7 +344,9 @@ function handleChooseDealType(
   action: Extract<GameAction, { type: 'CHOOSE_DEAL_TYPE' }>,
 ): GameState {
   if (action.dealType === 'small') {
-    const { card, deck, discard } = drawCard(state.decks.smallDealDeck, state.decks.smallDealDiscard);
+    const drawn = drawCard(state.decks.smallDealDeck, state.decks.smallDealDiscard);
+    if (!drawn) return { ...state, turnPhase: TurnPhase.END_OF_TURN };
+    const { card, deck, discard } = drawn;
 
     // Check if this is a stock split card - auto-resolve without player decision
     if (card.deal.type === 'stockSplit') {
@@ -360,7 +370,9 @@ function handleChooseDealType(
       turnPhase: TurnPhase.MAKE_DECISION,
     };
   } else {
-    const { card, deck, discard } = drawCard(state.decks.bigDealDeck, state.decks.bigDealDiscard);
+    const drawn = drawCard(state.decks.bigDealDeck, state.decks.bigDealDiscard);
+    if (!drawn) return { ...state, turnPhase: TurnPhase.END_OF_TURN };
+    const { card, deck, discard } = drawn;
     return {
       ...state,
       activeCard: { type: 'bigDeal', card },
@@ -595,6 +607,15 @@ function handleEndTurn(
     break;
   }
 
+  // Check if all players are bankrupt/eliminated
+  const activePlayers = newState.players.filter((p) => !p.isBankrupt);
+  if (activePlayers.length === 0) {
+    return {
+      ...newState,
+      turnPhase: TurnPhase.GAME_OVER,
+    };
+  }
+
   return {
     ...newState,
     currentPlayerIndex: nextIndex,
@@ -615,8 +636,13 @@ function handleCollectPayDay(
   newState = addLog(newState, player.id, `PayDay! Collected cash flow: $${cashFlow}. Cash: $${updatedPlayer.cash}`);
   newState = applyAutoLoan(newState, state.currentPlayerIndex);
 
-  // Now resolve the space the player actually landed on
-  return resolveSpace({ ...newState, turnPhase: TurnPhase.RESOLVE_SPACE });
+  const remaining = (newState.payDaysRemaining ?? 1) - 1;
+  if (remaining > 0) {
+    return { ...newState, payDaysRemaining: remaining };
+  }
+
+  // All pay days collected, now resolve the space the player landed on
+  return resolveSpace({ ...newState, payDaysRemaining: 0, turnPhase: TurnPhase.RESOLVE_SPACE });
 }
 
 function handleSellAsset(
@@ -755,7 +781,7 @@ function handleAcceptPlayerDeal(
   // We create a temporary card to pass to resolveBuyDeal
   const tempCard = state.activeCard;
   if (tempCard && (tempCard.type === 'smallDeal' || tempCard.type === 'bigDeal')) {
-    newState = resolveBuyDeal(newState, tempCard.card, deal.buyerId);
+    newState = resolveBuyDeal(newState, tempCard.card, deal.buyerId, undefined, true);
 
     // Discard the card
     if (tempCard.type === 'smallDeal') {
@@ -862,7 +888,9 @@ function resolveFastTrackSpace(state: GameState): GameState {
 
     case 'BusinessDeal': {
       // Draw a big deal card (fast track scale)
-      const { card, deck, discard } = drawCard(state.decks.bigDealDeck, state.decks.bigDealDiscard);
+      const drawn = drawCard(state.decks.bigDealDeck, state.decks.bigDealDiscard);
+      if (!drawn) return { ...state, turnPhase: TurnPhase.END_OF_TURN };
+      const { card, deck, discard } = drawn;
       let newState: GameState = {
         ...state,
         activeCard: { type: 'bigDeal', card },
@@ -1013,7 +1041,10 @@ export function getValidActions(state: GameState): GameAction['type'][] {
           actions.push('DECLINE_MARKET');
         }
       }
-      actions.push('END_TURN');
+      // Don't allow END_TURN when there's a mandatory doodad to pay
+      if (!state.activeCard || state.activeCard.type !== 'doodad') {
+        actions.push('END_TURN');
+      }
       break;
 
     case TurnPhase.WAITING_FOR_DEAL_RESPONSE:

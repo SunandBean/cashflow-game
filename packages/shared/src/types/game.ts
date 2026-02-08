@@ -89,6 +89,8 @@ export interface GameState {
   turnNumber: number;
   winner: string | null; // player ID
   pendingPlayerDeal: PendingPlayerDeal | null;
+  nextAssetId: number;
+  payDaysRemaining: number;
 }
 
 // ── Game Settings ──

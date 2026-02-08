@@ -11,14 +11,10 @@ import {
   canEscapeRatRace,
 } from '@cashflow/shared';
 import { useUIStore } from '../../stores/uiStore';
+import { formatMoney } from '../../utils/formatters.js';
 
 interface FinancialStatementProps {
   player: Player;
-}
-
-function formatMoney(amount: number): string {
-  const prefix = amount < 0 ? '-$' : '$';
-  return `${prefix}${Math.abs(amount).toLocaleString()}`;
 }
 
 export function FinancialStatement({ player }: FinancialStatementProps) {

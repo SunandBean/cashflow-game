@@ -571,7 +571,7 @@ describe('Socket.io Integration Tests', () => {
   // ── Error Cases ──
 
   describe('Error Cases', () => {
-    it('action from player not in a room returns error', async () => {
+    it('action from unauthenticated player returns error', async () => {
       const c1 = makeClient();
       await connectClient(c1);
 
@@ -585,7 +585,7 @@ describe('Socket.io Integration Tests', () => {
       });
       const { error } = await errorPromise;
 
-      expect(error).toBe('Not in a room');
+      expect(error).toBe('Unauthorized: socket does not own this player');
     });
 
     it('action when no game session exists returns error', async () => {
@@ -623,7 +623,7 @@ describe('Socket.io Integration Tests', () => {
       expect(message).toBe('Room not found');
     });
 
-    it('get_state without being in a room returns error', async () => {
+    it('get_state from unauthenticated player returns error', async () => {
       const c1 = makeClient();
       await connectClient(c1);
 
@@ -631,7 +631,7 @@ describe('Socket.io Integration Tests', () => {
       c1.emit('game:get_state', { playerId: 'nobody' });
       const { message } = await errorPromise;
 
-      expect(message).toBe('Not in a room');
+      expect(message).toBe('Unauthorized: socket does not own this player');
     });
 
     it('get_valid_actions without active game returns error', async () => {

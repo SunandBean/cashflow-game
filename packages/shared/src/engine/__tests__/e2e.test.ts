@@ -1264,6 +1264,7 @@ describe('Baby space end-to-end', () => {
 describe('Loan management end-to-end', () => {
   it('take voluntary loan and pay it off', () => {
     let game = create2PlayerGame();
+    game = { ...game, turnPhase: TurnPhase.END_OF_TURN };
     const cashBefore = game.players[0].cash;
 
     // Take a $5000 loan
@@ -1290,6 +1291,7 @@ describe('Loan management end-to-end', () => {
 
   it('pay off personal liability reduces monthly expenses', () => {
     let game = create2PlayerGame();
+    game = { ...game, turnPhase: TurnPhase.END_OF_TURN };
     game = setPlayerCash(game, 0, 50000);
 
     const expensesBefore = calculateTotalExpenses(game.players[0]);

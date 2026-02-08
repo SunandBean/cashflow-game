@@ -11,16 +11,19 @@ import { registerGameHandler } from './handlers/gameHandler.js';
 import { registerChatHandler } from './handlers/chatHandler.js';
 import type { ClientToServerEvents, ServerToClientEvents } from './handlers/eventTypes.js';
 
+const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173';
+const corsOrigins = CORS_ORIGIN.split(',').map((o) => o.trim());
+
 const app: Express = express();
 const httpServer: Server = createServer(app);
 const io = new SocketIOServer<ClientToServerEvents, ServerToClientEvents>(httpServer, {
   cors: {
-    origin: '*',
+    origin: corsOrigins,
     methods: ['GET', 'POST'],
   },
 });
 
-app.use(cors());
+app.use(cors({ origin: corsOrigins }));
 app.use(express.json());
 
 // Initialize stores and managers
@@ -47,6 +50,23 @@ app.get('/api/rooms', (_req, res) => {
   const rooms = roomManager.listRooms();
   res.json({ rooms });
 });
+
+// Periodic cleanup of stale rooms (every 5 minutes, rooms inactive for 30 minutes)
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+const STALE_ROOM_THRESHOLD_MS = 30 * 60 * 1000;
+
+setInterval(() => {
+  const staleRooms = roomManager.getStaleRooms(STALE_ROOM_THRESHOLD_MS);
+  for (const room of staleRooms) {
+    console.log(`Cleaning up stale room: ${room.id} (${room.name})`);
+    gameManager.deleteSession(room.id);
+    roomManager.deleteRoom(room.id);
+    io.to(room.id).emit('room:closed', {
+      roomId: room.id,
+      reason: 'Room closed due to inactivity',
+    });
+  }
+}, CLEANUP_INTERVAL_MS);
 
 const PORT = process.env.PORT || 3001;
 

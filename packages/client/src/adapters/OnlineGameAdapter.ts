@@ -4,17 +4,22 @@ import type { Socket } from 'socket.io-client';
 export class OnlineGameAdapter implements GameAdapter {
   private state: GameState | null = null;
   private listeners: Set<(state: GameState) => void> = new Set();
+  private handleStateUpdate: (data: { state: GameState }) => void;
 
   constructor(private socket: Socket) {
     // Listen for state updates from server
-    this.socket.on('game:state_update', (data: { state: GameState }) => {
+    this.handleStateUpdate = (data: { state: GameState }) => {
       this.state = data.state;
       this.listeners.forEach(l => l(data.state));
-    });
+    };
+    this.socket.on('game:state_update', this.handleStateUpdate);
   }
 
   getState(): GameState {
-    return this.state!;
+    if (!this.state) {
+      throw new Error('OnlineGameAdapter: state not yet initialized. Call setInitialState() first.');
+    }
+    return this.state;
   }
 
   dispatch(action: GameAction): void {
@@ -35,7 +40,7 @@ export class OnlineGameAdapter implements GameAdapter {
   }
 
   cleanup(): void {
-    this.socket.off('game:state_update');
+    this.socket.off('game:state_update', this.handleStateUpdate);
     this.listeners.clear();
   }
 }

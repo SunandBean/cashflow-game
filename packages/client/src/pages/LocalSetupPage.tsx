@@ -4,6 +4,7 @@ import { PROFESSIONS } from '@cashflow/shared';
 import type { ProfessionCard } from '@cashflow/shared';
 import { LocalGameAdapter } from '../adapters/LocalGameAdapter';
 import { useGameStore } from '../stores/gameStore';
+import { PLAYER_COLORS } from '../constants/colors.js';
 
 function shuffleArray<T>(arr: T[]): T[] {
   const copy = [...arr];
@@ -182,8 +183,6 @@ export default function LocalSetupPage() {
     </div>
   );
 }
-
-const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22'];
 
 const styles: Record<string, React.CSSProperties> = {
   container: {

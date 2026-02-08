@@ -23,13 +23,9 @@ import {
   autoTakeLoanIfNeeded,
 } from './FinancialCalculator.js';
 
-let assetCounter = 0;
-function nextAssetId(): string {
-  return `asset-${++assetCounter}`;
-}
-
-export function resetAssetCounter(): void {
-  assetCounter = 0;
+function getNextAssetId(state: GameState): { id: string; state: GameState } {
+  const id = `asset-${state.nextAssetId}`;
+  return { id, state: { ...state, nextAssetId: state.nextAssetId + 1 } };
 }
 
 /** Buy a small or big deal card */
@@ -38,6 +34,7 @@ export function resolveBuyDeal(
   card: SmallDealCard | BigDealCard,
   playerId: string,
   shares?: number,
+  skipPayment?: boolean,
 ): GameState {
   const playerIndex = state.players.findIndex((p) => p.id === playerId);
   if (playerIndex === -1) return state;
@@ -49,7 +46,7 @@ export function resolveBuyDeal(
     case 'stock': {
       const numShares = shares ?? 1;
       const cost = deal.costPerShare * numShares;
-      if (player.cash < cost) {
+      if (!skipPayment && player.cash < cost) {
         return addLog(state, playerId, `Cannot afford ${numShares} shares of ${deal.symbol} ($${cost})`);
       }
 
@@ -58,8 +55,11 @@ export function resolveBuyDeal(
       if (existingStock) {
         player = updateStockShares(player, existingStock.id, numShares);
       } else {
+        const { id: assetId, state: stateWithId } = getNextAssetId(state);
+        state = stateWithId;
         const asset: StockAsset = {
-          id: nextAssetId(),
+          kind: 'stock',
+          id: assetId,
           name: deal.name,
           symbol: deal.symbol,
           shares: numShares,
@@ -68,7 +68,9 @@ export function resolveBuyDeal(
         };
         player = addAsset(player, asset);
       }
-      player = { ...player, cash: player.cash - cost };
+      if (!skipPayment) {
+        player = { ...player, cash: player.cash - cost };
+      }
 
       return updatePlayer(
         addLog(state, playerId, `Bought ${numShares} shares of ${deal.symbol} at $${deal.costPerShare}/share`),
@@ -78,12 +80,15 @@ export function resolveBuyDeal(
     }
 
     case 'realEstate': {
-      if (player.cash < deal.downPayment) {
+      if (!skipPayment && player.cash < deal.downPayment) {
         return addLog(state, playerId, `Cannot afford down payment of $${deal.downPayment} for ${deal.name}`);
       }
 
+      const { id: assetId, state: stateWithId } = getNextAssetId(state);
+      state = stateWithId;
       const asset: RealEstateAsset = {
-        id: nextAssetId(),
+        kind: 'realEstate',
+        id: assetId,
         name: deal.name,
         type: deal.subType,
         cost: deal.cost,
@@ -92,7 +97,9 @@ export function resolveBuyDeal(
         cashFlow: deal.cashFlow,
       };
       player = addAsset(player, asset);
-      player = { ...player, cash: player.cash - deal.downPayment };
+      if (!skipPayment) {
+        player = { ...player, cash: player.cash - deal.downPayment };
+      }
 
       return updatePlayer(
         addLog(state, playerId, `Bought ${deal.name} for $${deal.downPayment} down (cash flow: $${deal.cashFlow}/mo)`),
@@ -102,12 +109,15 @@ export function resolveBuyDeal(
     }
 
     case 'business': {
-      if (player.cash < deal.downPayment) {
+      if (!skipPayment && player.cash < deal.downPayment) {
         return addLog(state, playerId, `Cannot afford down payment of $${deal.downPayment} for ${deal.name}`);
       }
 
+      const { id: assetId, state: stateWithId } = getNextAssetId(state);
+      state = stateWithId;
       const asset: BusinessAsset = {
-        id: nextAssetId(),
+        kind: 'business',
+        id: assetId,
         name: deal.name,
         cost: deal.cost,
         mortgage: deal.mortgage,
@@ -115,7 +125,9 @@ export function resolveBuyDeal(
         cashFlow: deal.cashFlow,
       };
       player = addAsset(player, asset);
-      player = { ...player, cash: player.cash - deal.downPayment };
+      if (!skipPayment) {
+        player = { ...player, cash: player.cash - deal.downPayment };
+      }
 
       return updatePlayer(
         addLog(state, playerId, `Bought ${deal.name} for $${deal.downPayment} down (cash flow: $${deal.cashFlow}/mo)`),

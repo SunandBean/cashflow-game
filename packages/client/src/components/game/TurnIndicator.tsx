@@ -1,11 +1,10 @@
 import type { GameState } from '@cashflow/shared';
 import { calculatePassiveIncome } from '@cashflow/shared';
+import { PLAYER_COLORS } from '../../constants/colors.js';
 
 interface TurnIndicatorProps {
   gameState: GameState;
 }
-
-const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22'];
 
 export function TurnIndicator({ gameState }: TurnIndicatorProps) {
   return (

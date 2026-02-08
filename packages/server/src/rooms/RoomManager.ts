@@ -27,6 +27,7 @@ export class RoomManager {
       status: 'waiting',
       mode: 'online',
       createdAt: Date.now(),
+      lastActivityAt: Date.now(),
     };
 
     this.store.createRoom(room);
@@ -49,6 +50,7 @@ export class RoomManager {
       status: 'waiting',
       mode: 'companion',
       createdAt: Date.now(),
+      lastActivityAt: Date.now(),
     };
 
     this.store.createRoom(room);
@@ -182,5 +184,39 @@ export class RoomManager {
 
     this.store.updateRoom(roomId, { status: 'playing' });
     return this.store.getRoom(roomId)!;
+  }
+
+  updatePlayerSocket(playerId: string, roomId: string, newSocketId: string): void {
+    const room = this.store.getRoom(roomId);
+    if (!room) return;
+
+    const updatedPlayers = room.players.map((p) =>
+      p.id === playerId ? { ...p, socketId: newSocketId } : p,
+    );
+    this.store.updateRoom(roomId, { players: updatedPlayers });
+  }
+
+  touchRoom(roomId: string): void {
+    this.store.updateRoom(roomId, { lastActivityAt: Date.now() });
+  }
+
+  getStaleRooms(maxInactiveMs: number): Room[] {
+    const now = Date.now();
+    return this.store.listRooms().filter((room) => {
+      const inactive = now - room.lastActivityAt > maxInactiveMs;
+      if (!inactive) return false;
+
+      // For playing rooms, only consider stale if ALL players are disconnected
+      if (room.status === 'playing') {
+        return room.players.every((p) => p.socketId === '');
+      }
+
+      // For waiting rooms, stale if inactive long enough
+      return true;
+    });
+  }
+
+  deleteRoom(roomId: string): void {
+    this.store.deleteRoom(roomId);
   }
 }

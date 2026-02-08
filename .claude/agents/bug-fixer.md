@@ -10,6 +10,9 @@ Given a bug report or error message, investigate the root cause and implement a 
 - Game engine: pure functions in shared package, state + action → new state
 - Server: Socket.io handlers delegate to GameSession → processAction
 - Client: Zustand stores, GameAdapter pattern, React components
+- Turn state machine: ROLL_DICE → PAY_DAY_COLLECTION → RESOLVE_SPACE → MAKE_DECISION → END_OF_TURN
+- GameState fields: `nextAssetId` (per-game asset counter), `payDaysRemaining` (multi-payday tracking)
+- Asset types use `kind` discriminant: `'stock' | 'realEstate' | 'business'`
 
 ## Investigation Process
 
@@ -27,11 +30,19 @@ Given a bug report or error message, investigate the root cause and implement a 
    - State mutation instead of immutable update (missing spread operator)
    - Wrong TurnPhase transition (state machine violation)
    - Missing auto-loan check after cash reduction
-   - Deck empty (drawCard should reshuffle from discard)
-   - PayDay counting error on board wrap-around
-   - Asset ID collision (nextAssetId counter)
+   - Deck empty — `drawCard` returns null when both deck and discard are empty, callers must handle null
+   - PayDay counting error on board wrap-around — use `payDaysRemaining` field
+   - Asset ID collision — `nextAssetId` is per-game in GameState (not global)
    - Player index vs player ID confusion
    - Missing validation in getValidActions for edge case
+   - Validator missing phase check (TAKE_LOAN/PAY_OFF_LOAN require END_OF_TURN)
+   - SELL_ASSET requires phase check + ownership + price validation
+   - Doodad cards must block END_TURN (mandatory expense)
+   - Player deal double-charge — buyer pays askingPrice only, `resolveBuyDeal` uses `skipPayment: true`
+   - Socket-player auth — `getPlayerBySocket` must verify socket ownership
+   - OnlineGameAdapter.getState() can throw if state is null before first update
+   - SocketProvider must be singleton above routes (not per-route)
+   - Direct room mutation — always use `store.updateRoom()`, not direct property assignment
 
 4. **Implement the fix**:
    - Fix in the correct package (bugs in game logic → shared, not server)

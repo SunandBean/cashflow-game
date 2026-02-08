@@ -13,6 +13,7 @@ function makeRoom(overrides: Partial<Room> = {}): Room {
     status: 'waiting',
     mode: 'online',
     createdAt: Date.now(),
+    lastActivityAt: Date.now(),
     ...overrides,
   };
 }

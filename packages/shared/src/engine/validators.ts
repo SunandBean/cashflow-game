@@ -43,6 +43,12 @@ export function validateAction(state: GameState, action: GameAction): Validation
       if (player.downsizedTurnsLeft > 0) {
         return { valid: false, error: 'Player is downsized and cannot roll' };
       }
+      if (!Array.isArray(action.diceValues) || action.diceValues.length !== 2) {
+        return { valid: false, error: 'Dice values must be an array of two numbers' };
+      }
+      if (!action.diceValues.every((v: number) => Number.isInteger(v) && v >= 1 && v <= 6)) {
+        return { valid: false, error: 'Each die value must be an integer between 1 and 6' };
+      }
       return { valid: true };
 
     case 'CHOOSE_DEAL_TYPE':
@@ -80,6 +86,9 @@ export function validateAction(state: GameState, action: GameAction): Validation
       return { valid: true };
 
     case 'TAKE_LOAN':
+      if (state.turnPhase !== TurnPhase.END_OF_TURN) {
+        return { valid: false, error: 'Can only take loans during end of turn' };
+      }
       if (action.amount <= 0 || action.amount % 1000 !== 0) {
         return { valid: false, error: 'Loan amount must be a positive multiple of $1,000' };
       }
@@ -92,6 +101,9 @@ export function validateAction(state: GameState, action: GameAction): Validation
       return { valid: true };
 
     case 'PAY_OFF_LOAN':
+      if (state.turnPhase !== TurnPhase.END_OF_TURN) {
+        return { valid: false, error: 'Can only pay off loans during end of turn' };
+      }
       if (action.amount <= 0 || action.amount % 1000 !== 0) {
         return { valid: false, error: 'Payment must be a positive multiple of $1,000' };
       }
@@ -112,6 +124,10 @@ export function validateAction(state: GameState, action: GameAction): Validation
         }
         return { valid: false, error: 'Cannot end turn in current phase' };
       }
+      // Block END_TURN during MAKE_DECISION if there's a mandatory doodad expense
+      if (state.turnPhase === TurnPhase.MAKE_DECISION && state.activeCard?.type === 'doodad') {
+        return { valid: false, error: 'Must pay doodad expense before ending turn' };
+      }
       return { valid: true };
 
     case 'COLLECT_PAY_DAY':
@@ -130,6 +146,21 @@ export function validateAction(state: GameState, action: GameAction): Validation
       return { valid: true };
 
     case 'SELL_ASSET':
+      if (state.turnPhase !== TurnPhase.MAKE_DECISION && state.turnPhase !== TurnPhase.END_OF_TURN) {
+        return { valid: false, error: 'Cannot sell asset in current phase' };
+      }
+      {
+        const asset = player.financialStatement.assets.find((a) => a.id === action.assetId);
+        if (!asset) {
+          return { valid: false, error: 'Asset not found' };
+        }
+        if (action.price !== undefined && action.price < 0) {
+          return { valid: false, error: 'Price must be non-negative' };
+        }
+        if (action.shares !== undefined && action.shares <= 0) {
+          return { valid: false, error: 'Shares must be positive' };
+        }
+      }
       return { valid: true };
 
     case 'SELL_TO_MARKET':

@@ -2,6 +2,7 @@ import { RAT_RACE_SPACES, FAST_TRACK_SPACES } from '@cashflow/shared';
 import type { GameState, RatRaceSpace, FastTrackSpace } from '@cashflow/shared';
 import { PlayerToken } from './PlayerToken.js';
 import { formatPhase } from '../../utils/formatters.js';
+import { PLAYER_COLORS } from '../../constants/colors.js';
 
 interface GameBoardProps {
   gameState: GameState;
@@ -58,8 +59,6 @@ const FAST_TRACK_ICONS: Record<string, string> = {
 // Fast track dimensions
 const FT_SPACE_W = 72;
 const FT_SPACE_H = 52;
-
-const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22'];
 
 /** Split a label into up to 2 lines at the best word boundary. */
 function wrapLabel(label: string, maxCharsPerLine: number): string[] {

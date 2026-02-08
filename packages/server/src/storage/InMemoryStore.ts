@@ -14,6 +14,7 @@ export interface Room {
   status: 'waiting' | 'playing' | 'finished';
   mode: 'online' | 'companion';
   createdAt: number;
+  lastActivityAt: number;
 }
 
 export class InMemoryStore {

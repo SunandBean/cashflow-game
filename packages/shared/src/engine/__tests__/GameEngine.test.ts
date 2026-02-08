@@ -949,13 +949,13 @@ describe('getValidActions', () => {
     expect(actions).toContain('END_TURN');
   });
 
-  it('returns PAY_EXPENSE for doodad in MAKE_DECISION phase', () => {
+  it('returns PAY_EXPENSE for doodad in MAKE_DECISION phase (no END_TURN)', () => {
     const game = stateInPhase(TurnPhase.MAKE_DECISION, {
       activeCard: { type: 'doodad', card: makeDoodadCard() },
     });
     const actions = getValidActions(game);
     expect(actions).toContain('PAY_EXPENSE');
-    expect(actions).toContain('END_TURN');
+    expect(actions).not.toContain('END_TURN');
   });
 
   it('returns SELL_TO_MARKET and DECLINE_MARKET for market card in MAKE_DECISION phase', () => {
@@ -1106,6 +1106,7 @@ describe('Bankruptcy', () => {
                 ...p.financialStatement,
                 assets: [
                   {
+                    kind: 'realEstate' as const,
                     id: 'asset-house',
                     name: 'House',
                     type: 'house' as const,
@@ -1205,6 +1206,7 @@ describe('Stock Split', () => {
                 ...p.financialStatement,
                 assets: [
                   {
+                    kind: 'stock' as const,
                     id: 'asset-tst',
                     name: 'Test Stock',
                     symbol: 'TST',
@@ -1265,6 +1267,7 @@ describe('Stock Split', () => {
                 ...p.financialStatement,
                 assets: [
                   {
+                    kind: 'stock' as const,
                     id: 'asset-tst',
                     name: 'Test Stock',
                     symbol: 'TST',
@@ -1322,6 +1325,7 @@ describe('Stock Split', () => {
                 ...p.financialStatement,
                 assets: [
                   {
+                    kind: 'stock' as const,
                     id: 'asset-tst',
                     name: 'Test Stock',
                     symbol: 'TST',
@@ -1374,6 +1378,7 @@ describe('Stock Split', () => {
           ...p.financialStatement,
           assets: [
             {
+              kind: 'stock' as const,
               id: `asset-tst-${p.id}`,
               name: 'Test Stock',
               symbol: 'TST',
@@ -1464,8 +1469,8 @@ describe('Player Deal Selling', () => {
     expect(result.pendingPlayerDeal).toBeNull();
     // Seller gets asking price
     expect(result.players[0].cash).toBe(5500); // 5000 + 500
-    // Buyer pays asking price (500) + stock cost (1 share * $5 = $5) = 505 total from 3000
-    expect(result.players[1].cash).toBe(2495); // 3000 - 500 - 5
+    // Buyer pays asking price only (500) - no double-charging with stock cost
+    expect(result.players[1].cash).toBe(2500); // 3000 - 500
   });
 
   it('declines a deal: returns to MAKE_DECISION phase', () => {

@@ -12,6 +12,7 @@ Given source file path(s), analyze the code and generate comprehensive test file
 - Shared/Server: pure Node.js tests (no DOM)
 - All imports use `.js` extension for ESM compatibility
 - Test files go in `__tests__/` directory next to source files
+- Current test count: shared=301, client=80, server=149 (530 total)
 
 ## Process
 
@@ -46,6 +47,29 @@ Given source file path(s), analyze the code and generate comprehensive test file
 - Component tests: mock child components if they're complex (e.g., `vi.mock('../DiceRoller')`)
 - Store tests: use the real store singleton, reset via `store.setState()` in beforeEach
 
+## Game Engine API Notes
+
+When writing tests for game engine functions:
+- `createGame(playerInfos, professions)` — requires professions array (use `PROFESSIONS` from constants)
+- `calculateTotalIncome(fs: FinancialStatement)` — takes FinancialStatement, not Player
+- `calculateTotalExpenses(player: Player)` — takes Player
+- `calculateCashFlow(player: Player)` — takes Player
+- `calculatePassiveIncome(fs: FinancialStatement)` — takes FinancialStatement
+- Log entries are objects: `{ timestamp, playerId, message }`, not plain strings
+- Assets must include `kind` discriminant: `'stock' | 'realEstate' | 'business'`
+- GameState includes `nextAssetId` (starts at 1) and `payDaysRemaining` (starts at 0)
+- `drawCard` returns null when both deck and discard are empty
+- Dice values must be integers 1-6
+
+## Playthrough Test Pattern
+
+For comprehensive integration testing, use the playthrough pattern (see `manual-playthrough.test.ts`):
+1. Create a game with 2-3 players using `createGame` + `PROFESSIONS`
+2. Process turns with a loop: ROLL_DICE → handle phase → END_TURN
+3. Use helper functions: `act(state, action)`, `cp(state)` for current player, `lastLogMsg(state)`
+4. Test both happy path and edge cases (invalid dice, wrong phase, empty deck)
+5. Run multiple rounds to exercise PayDay collection, various card types
+
 ## E2E Testing Patterns (Socket.io)
 
 When writing E2E tests for the server:
@@ -72,6 +96,8 @@ When writing E2E tests for the server:
    - Server overrides dice values → send `[0, 0]` as placeholder
    - Decks are sent as null arrays to clients (card data hidden)
    - Use `waitForEvent` with timeout to catch both success and error cases
+   - Assets in test state must include `kind` field
+   - Socket-player auth: make sure socket is properly registered via room:create/room:join before dispatching
 
 ## Output
 After writing tests, report:

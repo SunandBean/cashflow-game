@@ -1,5 +1,10 @@
 import { TurnPhase } from '@cashflow/shared';
 
+export function formatMoney(amount: number): string {
+  const prefix = amount < 0 ? '-$' : '$';
+  return `${prefix}${Math.abs(amount).toLocaleString()}`;
+}
+
 export function formatPhase(phase: TurnPhase): string {
   switch (phase) {
     case TurnPhase.ROLL_DICE: return 'Roll the Dice';

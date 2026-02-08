@@ -6,7 +6,7 @@ function getOrCreatePlayerId(): string {
   // (survives tab close, QR re-scan, etc.)
   let id = localStorage.getItem('cashflow_player_id');
   if (!id) {
-    id = 'player_' + Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+    id = crypto.randomUUID();
     localStorage.setItem('cashflow_player_id', id);
   }
   return id;

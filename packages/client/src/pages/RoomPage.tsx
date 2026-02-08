@@ -5,23 +5,8 @@ import { useConnectionStore } from '../stores/connectionStore';
 import { useGameStore } from '../stores/gameStore';
 import { useSocket } from '../socket/SocketProvider';
 import { OnlineGameAdapter } from '../adapters/OnlineGameAdapter';
-
-interface RoomPlayer {
-  id: string;
-  name: string;
-  socketId: string;
-  isReady: boolean;
-}
-
-interface Room {
-  id: string;
-  name: string;
-  hostId: string;
-  players: RoomPlayer[];
-  maxPlayers: number;
-  status: 'waiting' | 'playing' | 'finished';
-  createdAt: number;
-}
+import type { Room } from '../types/room.js';
+import { PLAYER_COLORS } from '../constants/colors.js';
 
 interface ChatMessage {
   playerId: string;
@@ -281,8 +266,6 @@ export default function RoomPage() {
     </div>
   );
 }
-
-const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22'];
 
 const styles: Record<string, React.CSSProperties> = {
   container: {

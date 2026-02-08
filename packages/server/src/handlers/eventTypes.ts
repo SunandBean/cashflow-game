@@ -35,6 +35,11 @@ export interface ClientToServerEvents {
     roomId: string;
   }) => void;
 
+  'room:reconnect': (data: {
+    playerId: string;
+    sessionToken: string;
+  }) => void;
+
   // Game events
   'game:action': (data: {
     playerId: string;
@@ -60,8 +65,9 @@ export interface ClientToServerEvents {
 
 export interface ServerToClientEvents {
   // Room events
-  'room:created': (data: { room: Room }) => void;
-  'room:joined': (data: { room: Room }) => void;
+  'room:created': (data: { room: Room; sessionToken: string }) => void;
+  'room:joined': (data: { room: Room; sessionToken: string }) => void;
+  'room:reconnected': (data: { room: Room; state?: GameState; sessionToken: string }) => void;
   'room:player_joined': (data: { room: Room; playerId: string; playerName: string }) => void;
   'room:player_left': (data: { room: Room; playerId: string; newHostId?: string }) => void;
   'room:list': (data: { rooms: Room[] }) => void;

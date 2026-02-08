@@ -2,23 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useSocket } from '../socket/SocketProvider';
-
-interface RoomPlayer {
-  id: string;
-  name: string;
-  socketId: string;
-  isReady: boolean;
-}
-
-interface Room {
-  id: string;
-  name: string;
-  hostId: string;
-  players: RoomPlayer[];
-  maxPlayers: number;
-  status: 'waiting' | 'playing' | 'finished';
-  createdAt: number;
-}
+import type { Room } from '../types/room.js';
 
 export default function LobbyPage() {
   const navigate = useNavigate();
@@ -77,10 +61,41 @@ export default function LobbyPage() {
     };
   }, [socket, navigate, setCurrentRoomId, refreshRooms]);
 
-  // Periodically refresh rooms
+  // Periodically refresh rooms, pausing when tab is hidden
   useEffect(() => {
-    const interval = setInterval(refreshRooms, 3000);
-    return () => clearInterval(interval);
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const startPolling = () => {
+      if (!interval) {
+        interval = setInterval(refreshRooms, 3000);
+      }
+    };
+
+    const stopPolling = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        stopPolling();
+      } else {
+        refreshRooms();
+        startPolling();
+      }
+    };
+
+    if (!document.hidden) {
+      startPolling();
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [refreshRooms]);
 
   const handleSetName = () => {

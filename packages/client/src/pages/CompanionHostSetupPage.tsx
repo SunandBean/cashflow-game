@@ -6,25 +6,8 @@ import { useSocket } from '../socket/SocketProvider.js';
 import { useConnectionStore } from '../stores/connectionStore.js';
 import { useGameStore } from '../stores/gameStore.js';
 import { OnlineGameAdapter } from '../adapters/OnlineGameAdapter.js';
-
-interface RoomPlayer {
-  id: string;
-  name: string;
-  socketId: string;
-  isReady: boolean;
-}
-
-interface Room {
-  id: string;
-  name: string;
-  hostId: string;
-  players: RoomPlayer[];
-  maxPlayers: number;
-  status: string;
-  mode: string;
-}
-
-const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22'];
+import type { Room } from '../types/room.js';
+import { PLAYER_COLORS } from '../constants/colors.js';
 
 function getCompanionUrl(roomId: string): string {
   // Use current hostname (LAN IP or localhost) for companion URL

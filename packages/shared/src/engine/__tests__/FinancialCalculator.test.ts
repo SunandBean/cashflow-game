@@ -74,6 +74,7 @@ function createBasePlayer(overrides?: Partial<Player>): Player {
 
 function makeStockAsset(overrides?: Partial<StockAsset>): StockAsset {
   return {
+    kind: 'stock',
     id: 'stock-1',
     name: 'Test Stock',
     symbol: 'TST',
@@ -86,6 +87,7 @@ function makeStockAsset(overrides?: Partial<StockAsset>): StockAsset {
 
 function makeRealEstateAsset(overrides?: Partial<RealEstateAsset>): RealEstateAsset {
   return {
+    kind: 'realEstate',
     id: 're-1',
     name: '3Br/2Ba House',
     type: 'house',
@@ -99,6 +101,7 @@ function makeRealEstateAsset(overrides?: Partial<RealEstateAsset>): RealEstateAs
 
 function makeBusinessAsset(overrides?: Partial<BusinessAsset>): BusinessAsset {
   return {
+    kind: 'business',
     id: 'biz-1',
     name: 'Vending Machine Route',
     cost: 6000,

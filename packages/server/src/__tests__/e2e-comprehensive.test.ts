@@ -401,7 +401,7 @@ describe('Rat Race Board Spaces', () => {
                 financialStatement: {
                   ...p.financialStatement,
                   assets: [
-                    { id: 'stock-on2u', name: 'ON2U Corp', symbol: 'ON2U', shares: 100, costPerShare: 5, dividendPerShare: 0 },
+                    { kind: 'stock', id: 'stock-on2u', name: 'ON2U Corp', symbol: 'ON2U', shares: 100, costPerShare: 5, dividendPerShare: 0 },
                   ],
                 },
               }
@@ -452,7 +452,7 @@ describe('Rat Race Board Spaces', () => {
                 financialStatement: {
                   ...p.financialStatement,
                   assets: [
-                    { id: 'house-1', name: 'Small House', type: 'house', cost: 60000, mortgage: 50000, downPayment: 10000, cashFlow: 100 },
+                    { kind: 'realEstate', id: 'house-1', name: 'Small House', type: 'house', cost: 60000, mortgage: 50000, downPayment: 10000, cashFlow: 100 },
                   ],
                 },
               }
@@ -501,7 +501,7 @@ describe('Rat Race Board Spaces', () => {
                 financialStatement: {
                   ...p.financialStatement,
                   assets: [
-                    { id: 'condo-1', name: 'Beachside Condo', type: 'condo', cost: 80000, mortgage: 70000, downPayment: 10000, cashFlow: 200 },
+                    { kind: 'realEstate', id: 'condo-1', name: 'Beachside Condo', type: 'condo', cost: 80000, mortgage: 70000, downPayment: 10000, cashFlow: 200 },
                   ],
                 },
               }
@@ -545,7 +545,7 @@ describe('Rat Race Board Spaces', () => {
           financialStatement: {
             ...p.financialStatement,
             assets: [
-              { id: `house-${p.id}`, name: 'Small House', type: 'house', cost: 60000, mortgage: 50000, downPayment: 10000, cashFlow: 100 },
+              { kind: 'realEstate', id: `house-${p.id}`, name: 'Small House', type: 'house', cost: 60000, mortgage: 50000, downPayment: 10000, cashFlow: 100 },
             ],
           },
         })),
@@ -1003,7 +1003,7 @@ describe('Deal Card Types — BUY_ASSET', () => {
                 cash: 5000,
                 financialStatement: {
                   ...p.financialStatement,
-                  assets: [{ id: 'existing-on2u', name: 'ON2U Corp', symbol: 'ON2U', shares: 50, costPerShare: 5, dividendPerShare: 0 }],
+                  assets: [{ kind: 'stock', id: 'existing-on2u', name: 'ON2U Corp', symbol: 'ON2U', shares: 50, costPerShare: 5, dividendPerShare: 0 }],
                 },
               }
             : p,
@@ -1232,7 +1232,7 @@ describe('Deal Card Types — BUY_ASSET', () => {
           position: i === pi ? 3 : p.position, // Deal space
           financialStatement: {
             ...p.financialStatement,
-            assets: [{ id: `on2u-${p.id}`, name: 'ON2U Corp', symbol: 'ON2U', shares: 100, costPerShare: 10, dividendPerShare: 0 }],
+            assets: [{ kind: 'stock', id: `on2u-${p.id}`, name: 'ON2U Corp', symbol: 'ON2U', shares: 100, costPerShare: 10, dividendPerShare: 0 }],
           },
         })),
         // Put a stock split card at the top of the small deal deck
@@ -1374,8 +1374,8 @@ describe('Bankruptcy Mechanics', () => {
               financialStatement: {
                 ...p.financialStatement,
                 assets: [
-                  { id: 'house-1', name: 'House', type: 'house', cost: 60000, mortgage: 50000, downPayment: 10000, cashFlow: 100 },
-                  { id: 'stock-1', name: 'ON2U', symbol: 'ON2U', shares: 100, costPerShare: 5, dividendPerShare: 0 },
+                  { kind: 'realEstate', id: 'house-1', name: 'House', type: 'house', cost: 60000, mortgage: 50000, downPayment: 10000, cashFlow: 100 },
+                  { kind: 'stock', id: 'stock-1', name: 'ON2U', symbol: 'ON2U', shares: 100, costPerShare: 5, dividendPerShare: 0 },
                 ],
                 expenses: { ...p.financialStatement.expenses, carLoanPayment: 200, creditCardPayment: 100 },
                 liabilities: [
@@ -1567,7 +1567,7 @@ describe('Escape Rat Race', () => {
                 ...p.financialStatement,
                 assets: [
                   // Existing assets producing enough cash flow to almost escape
-                  { id: 'apt-1', name: 'Big Apartment', type: 'apartment', cost: 200000, mortgage: 180000, downPayment: 20000, cashFlow: totalExpenses },
+                  { kind: 'realEstate', id: 'apt-1', name: 'Big Apartment', type: 'apartment', cost: 200000, mortgage: 180000, downPayment: 20000, cashFlow: totalExpenses },
                 ],
               },
             }
@@ -1610,7 +1610,7 @@ describe('Escape Rat Race', () => {
               financialStatement: {
                 ...p.financialStatement,
                 assets: [
-                  { id: 'apt-1', name: 'Apartment', type: 'apartment', cost: 200000, mortgage: 180000, downPayment: 20000, cashFlow: 2000 },
+                  { kind: 'realEstate', id: 'apt-1', name: 'Apartment', type: 'apartment', cost: 200000, mortgage: 180000, downPayment: 20000, cashFlow: 2000 },
                 ],
               },
             }
@@ -2031,8 +2031,8 @@ describe('Player Deals — Extended', () => {
     const p1 = acceptState.players.find((p: any) => p.id === p1Id);
     const p2 = acceptState.players.find((p: any) => p.id === p2Id);
     expect(p1.cash).toBe(20000 + 500); // Received asking price
-    // p2 paid asking price + down payment
-    expect(p2.cash).toBe(20000 - 500 - 5000);
+    // p2 paid asking price only (skipPayment=true means engine doesn't also deduct downPayment)
+    expect(p2.cash).toBe(20000 - 500);
     expect(p2.financialStatement.assets).toHaveLength(1);
     expect(p2.financialStatement.assets[0].name).toBe('Bargain House');
   });
@@ -2152,7 +2152,7 @@ describe('SELL_ASSET — Stock selling', () => {
               financialStatement: {
                 ...p.financialStatement,
                 assets: [
-                  { id: 'gro4us-1', name: 'GRO4US Inc', symbol: 'GRO4US', shares: 50, costPerShare: 10, dividendPerShare: 0 },
+                  { kind: 'stock', id: 'gro4us-1', name: 'GRO4US Inc', symbol: 'GRO4US', shares: 50, costPerShare: 10, dividendPerShare: 0 },
                 ],
               },
             }

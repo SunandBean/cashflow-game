@@ -9,15 +9,15 @@ import type {
 } from '../types/index.js';
 
 export function isStockAsset(asset: Asset): asset is StockAsset {
-  return 'symbol' in asset && 'shares' in asset;
+  return asset.kind === 'stock';
 }
 
 export function isRealEstateAsset(asset: Asset): asset is RealEstateAsset {
-  return 'type' in asset && 'mortgage' in asset && !('symbol' in asset);
+  return asset.kind === 'realEstate';
 }
 
 export function isBusinessAsset(asset: Asset): asset is BusinessAsset {
-  return 'mortgage' in asset && !('type' in asset) && !('symbol' in asset);
+  return asset.kind === 'business';
 }
 
 /** Sum of passive income from all assets (dividends + real estate cash flow + business cash flow) */
@@ -238,11 +238,19 @@ export function autoTakeLoanIfNeeded(player: Player): { player: Player; amountBo
 export function getMaxBankLoan(player: Player): number {
   const currentCashFlow = calculateCashFlow(player);
   if (currentCashFlow <= 0) return 0;
-  // Each $1,000 of bank loan adds $1,000 * 0.1 / 12 ≈ $8.33 monthly payment
-  const monthlyPaymentPer1000 = (1000 * 0.1) / 12;
-  // Cash flow must stay > 0 after the new loan payment
-  const maxLoans = Math.floor((currentCashFlow - 1) / monthlyPaymentPer1000);
-  return Math.max(0, Math.floor(maxLoans) * 1000);
+  const currentPayment = calculateBankLoanPayment(player);
+  // Find max additional loan in $1,000 increments where cashflow stays > 0
+  // Use the actual Math.ceil payment calculation to avoid floating-point mismatch
+  let maxLoan = 0;
+  while (true) {
+    const candidateLoan = maxLoan + 1000;
+    const newTotalLoan = player.bankLoanAmount + candidateLoan;
+    const newPayment = Math.ceil((newTotalLoan * 0.1) / 12);
+    const additionalPayment = newPayment - currentPayment;
+    if (currentCashFlow - additionalPayment <= 0) break;
+    maxLoan = candidateLoan;
+  }
+  return maxLoan;
 }
 
 /** Execute bankruptcy procedure:

@@ -9,25 +9,8 @@ import { FinancialStatement } from '../components/financial/FinancialStatement.j
 import { DiceRoller } from '../components/board/DiceRoller.js';
 import { CardModal } from '../components/cards/CardModal.js';
 import { DealOfferModal } from '../components/cards/DealOfferModal.js';
-
-interface RoomPlayer {
-  id: string;
-  name: string;
-  socketId: string;
-  isReady: boolean;
-}
-
-interface Room {
-  id: string;
-  name: string;
-  hostId: string;
-  players: RoomPlayer[];
-  maxPlayers: number;
-  status: string;
-  mode: string;
-}
-
-const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22'];
+import type { Room } from '../types/room.js';
+import { PLAYER_COLORS } from '../constants/colors.js';
 
 type Phase = 'join' | 'waiting' | 'playing';
 

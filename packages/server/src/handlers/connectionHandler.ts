@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import type { Server, Socket } from 'socket.io';
 import type { RoomManager } from '../rooms/RoomManager.js';
 import type { GameManager } from '../game/GameManager.js';
@@ -9,6 +10,9 @@ type IOSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
 // Map socketId -> playerId
 const socketPlayerMap = new Map<string, string>();
 
+// Map playerId -> sessionToken (for reconnection auth)
+const sessionTokenMap = new Map<string, string>();
+
 export function setSocketPlayer(socketId: string, playerId: string): void {
   socketPlayerMap.set(socketId, playerId);
 }
@@ -19,6 +23,20 @@ export function getPlayerBySocket(socketId: string): string | undefined {
 
 export function removeSocket(socketId: string): void {
   socketPlayerMap.delete(socketId);
+}
+
+export function generateSessionToken(playerId: string): string {
+  const token = randomUUID();
+  sessionTokenMap.set(playerId, token);
+  return token;
+}
+
+export function verifySessionToken(playerId: string, token: string): boolean {
+  return sessionTokenMap.get(playerId) === token;
+}
+
+export function removeSessionToken(playerId: string): void {
+  sessionTokenMap.delete(playerId);
 }
 
 export function registerConnectionHandler(
@@ -59,17 +77,8 @@ export function registerConnectionHandler(
           });
         }
       } else if (room.status === 'playing') {
-        // In game: keep the player slot but notify others of disconnection
-        // Update socket ID to empty so we know they're disconnected
-        const updatedPlayers = room.players.map((p) =>
-          p.id === playerId ? { ...p, socketId: '' } : p,
-        );
-        roomManager.getRoom(room.id); // Ensure room exists
-        // We only update socketId, player stays in room for reconnection
-        const currentRoom = roomManager.getRoom(room.id);
-        if (currentRoom) {
-          currentRoom.players = updatedPlayers;
-        }
+        // In game: keep the player slot but mark as disconnected via store
+        roomManager.updatePlayerSocket(playerId, room.id, '');
 
         io.to(room.id).emit('player:disconnected', {
           playerId,

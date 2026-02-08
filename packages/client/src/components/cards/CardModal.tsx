@@ -1,16 +1,13 @@
 import { useState } from 'react';
 import type { GameState, GameAction } from '@cashflow/shared';
+import { calculateTotalIncome } from '@cashflow/shared';
 import { useGameStore } from '../../stores/gameStore';
+import { formatMoney } from '../../utils/formatters.js';
 
 interface CardModalProps {
   gameState: GameState;
   onDispatch?: (action: GameAction) => void;
   localPlayerId?: string;
-}
-
-function formatMoney(amount: number): string {
-  const prefix = amount < 0 ? '-$' : '$';
-  return `${prefix}${Math.abs(amount).toLocaleString()}`;
 }
 
 export function CardModal({ gameState, onDispatch, localPlayerId }: CardModalProps) {
@@ -280,10 +277,12 @@ export function CardModal({ gameState, onDispatch, localPlayerId }: CardModalPro
     if (activeCard.type !== 'doodad') return null;
     const card = activeCard.card;
 
-    let cost = card.cost;
-    let costLabel = formatMoney(cost);
+    let actualCost = card.cost;
+    let costLabel = formatMoney(actualCost);
     if (card.isPercentOfIncome) {
-      costLabel = `${card.cost}% of total income`;
+      const totalIncome = calculateTotalIncome(player.financialStatement);
+      actualCost = Math.floor(totalIncome * (card.cost / 100));
+      costLabel = `${formatMoney(actualCost)} (${card.cost}% of income)`;
     }
 
     return (
@@ -307,7 +306,7 @@ export function CardModal({ gameState, onDispatch, localPlayerId }: CardModalPro
 
         <div style={styles.buttonRow}>
           <button style={styles.payButton} onClick={handlePayExpense}>
-            Pay {formatMoney(cost)}
+            Pay {formatMoney(actualCost)}
           </button>
         </div>
       </div>

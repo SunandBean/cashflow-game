@@ -1,6 +1,7 @@
 // ── Asset types ──
 
 export interface StockAsset {
+  kind: 'stock';
   id: string;
   name: string;
   symbol: string;
@@ -10,6 +11,7 @@ export interface StockAsset {
 }
 
 export interface RealEstateAsset {
+  kind: 'realEstate';
   id: string;
   name: string;
   type: 'house' | 'condo' | 'apartment' | 'duplex' | 'fourplex' | 'eightplex' | 'land' | 'commercial';
@@ -20,6 +22,7 @@ export interface RealEstateAsset {
 }
 
 export interface BusinessAsset {
+  kind: 'business';
   id: string;
   name: string;
   cost: number;
