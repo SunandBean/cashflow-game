@@ -10,6 +10,7 @@ import { registerRoomHandler } from '../handlers/roomHandler.js';
 import { registerGameHandler } from '../handlers/gameHandler.js';
 import { registerChatHandler } from '../handlers/chatHandler.js';
 import type { ClientToServerEvents, ServerToClientEvents } from '../handlers/eventTypes.js';
+import { TurnPhase } from '@cashflow/shared';
 
 type TypedClientSocket = ClientSocket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -645,6 +646,388 @@ describe('Socket.io Integration Tests', () => {
       const { message } = await errorPromise;
 
       expect(message).toBe('No active game');
+    });
+  });
+
+  // ── V2 Actions: Bankruptcy, Player Deals ──
+
+  describe('V2 Actions', () => {
+    // Helper: start a 2-player game and return roomId, initial state, and current player info
+    async function startGameForV2(
+      c1: TypedClientSocket,
+      c2: TypedClientSocket,
+    ): Promise<{ roomId: string; state: any }> {
+      const roomId = await createRoomAndGetId(c1, 'p1', 'Alice');
+
+      const joinedPromise = waitForEvent(c2, 'room:joined');
+      c2.emit('room:join', { playerId: 'p2', playerName: 'Bob', roomId });
+      await joinedPromise;
+
+      c1.emit('room:ready', { playerId: 'p1', ready: true });
+      c2.emit('room:ready', { playerId: 'p2', ready: true });
+      await new Promise((r) => setTimeout(r, 50));
+
+      const startedPromise = waitForEvent<{ state: any; roomId: string }>(
+        c1,
+        'game:started',
+      );
+      c1.emit('room:start', { playerId: 'p1', roomId });
+      const { state } = await startedPromise;
+
+      return { roomId, state };
+    }
+
+    describe('DECLARE_BANKRUPTCY', () => {
+      it('processes DECLARE_BANKRUPTCY when state is in BANKRUPTCY_DECISION phase', async () => {
+        const c1 = makeClient();
+        const c2 = makeClient();
+        await Promise.all([connectClient(c1), connectClient(c2)]);
+
+        const { roomId, state } = await startGameForV2(c1, c2);
+
+        // Directly manipulate game session state to set up BANKRUPTCY_DECISION phase
+        const session = gameManager.getSession(roomId)!;
+        const currentPlayerId = session.getState().players[session.getState().currentPlayerIndex].id;
+        (session as any).state = {
+          ...session.getState(),
+          turnPhase: TurnPhase.BANKRUPTCY_DECISION,
+        };
+
+        const currentClient = currentPlayerId === 'p1' ? c1 : c2;
+        const updatePromise = waitForEvent<{ state: any }>(
+          currentClient,
+          'game:state_update',
+        );
+
+        currentClient.emit('game:action', {
+          playerId: currentPlayerId,
+          action: {
+            type: 'DECLARE_BANKRUPTCY',
+            playerId: currentPlayerId,
+          },
+        });
+
+        const { state: updatedState } = await updatePromise;
+        expect(updatedState).toBeDefined();
+        // After bankruptcy, the turn phase should move to END_OF_TURN
+        expect(updatedState.turnPhase).toBe(TurnPhase.END_OF_TURN);
+        // Log should contain bankruptcy message
+        const lastLogs = updatedState.log.slice(-2);
+        const hasBankruptLog = lastLogs.some(
+          (log: any) => log.message.includes('bankrupt') || log.message.includes('Bankruptcy') || log.message.includes('bankruptcy'),
+        );
+        expect(hasBankruptLog).toBe(true);
+      });
+
+      it('rejects DECLARE_BANKRUPTCY when not in BANKRUPTCY_DECISION phase', async () => {
+        const c1 = makeClient();
+        const c2 = makeClient();
+        await Promise.all([connectClient(c1), connectClient(c2)]);
+
+        const { state } = await startGameForV2(c1, c2);
+
+        // Game starts in ROLL_DICE phase, so DECLARE_BANKRUPTCY should be rejected
+        const currentPlayerId = state.players[state.currentPlayerIndex].id;
+        const currentClient = currentPlayerId === 'p1' ? c1 : c2;
+
+        const errorPromise = waitForEvent<{ error: string }>(
+          currentClient,
+          'game:action_error',
+        );
+
+        currentClient.emit('game:action', {
+          playerId: currentPlayerId,
+          action: {
+            type: 'DECLARE_BANKRUPTCY',
+            playerId: currentPlayerId,
+          },
+        });
+
+        const { error } = await errorPromise;
+        expect(error).toContain('Invalid action');
+      });
+    });
+
+    describe('OFFER_DEAL_TO_PLAYER + ACCEPT_PLAYER_DEAL', () => {
+      it('offers a deal to another player and accepts it via socket', async () => {
+        const c1 = makeClient();
+        const c2 = makeClient();
+        await Promise.all([connectClient(c1), connectClient(c2)]);
+
+        const { roomId } = await startGameForV2(c1, c2);
+
+        // Set up game state: p1's turn, MAKE_DECISION phase with an active small deal card
+        const session = gameManager.getSession(roomId)!;
+        const p1Index = session.getState().players.findIndex((p: any) => p.id === 'p1');
+        (session as any).state = {
+          ...session.getState(),
+          currentPlayerIndex: p1Index,
+          turnPhase: TurnPhase.MAKE_DECISION,
+          activeCard: {
+            type: 'smallDeal' as const,
+            card: {
+              id: 'test-deal-card',
+              title: 'Test Stock',
+              deal: {
+                type: 'stock' as const,
+                name: 'Test Stock',
+                symbol: 'OK4U',
+                costPerShare: 10,
+                dividendPerShare: 0,
+                historicalPriceRange: { low: 5, high: 30 },
+                description: 'Test stock deal',
+                rule: 'Buy shares at this price.',
+              },
+            },
+          },
+          pendingPlayerDeal: null,
+        };
+
+        // P1 offers deal to P2 — both clients receive the broadcast
+        const offerUpdateC1 = waitForEvent<{ state: any }>(c1, 'game:state_update');
+        const offerUpdateC2 = waitForEvent<{ state: any }>(c2, 'game:state_update');
+
+        c1.emit('game:action', {
+          playerId: 'p1',
+          action: {
+            type: 'OFFER_DEAL_TO_PLAYER',
+            playerId: 'p1',
+            targetPlayerId: 'p2',
+            askingPrice: 500,
+          },
+        });
+
+        const [{ state: offerState }] = await Promise.all([offerUpdateC1, offerUpdateC2]);
+        expect(offerState.turnPhase).toBe(TurnPhase.WAITING_FOR_DEAL_RESPONSE);
+        expect(offerState.pendingPlayerDeal).toBeDefined();
+        expect(offerState.pendingPlayerDeal.sellerId).toBe('p1');
+        expect(offerState.pendingPlayerDeal.buyerId).toBe('p2');
+        expect(offerState.pendingPlayerDeal.askingPrice).toBe(500);
+
+        // P2 accepts the deal — set up listener AFTER the offer broadcast has been consumed
+        const acceptUpdatePromise = waitForEvent<{ state: any }>(
+          c2,
+          'game:state_update',
+        );
+
+        c2.emit('game:action', {
+          playerId: 'p2',
+          action: {
+            type: 'ACCEPT_PLAYER_DEAL',
+            playerId: 'p2',
+          },
+        });
+
+        const { state: acceptState } = await acceptUpdatePromise;
+        expect(acceptState.turnPhase).toBe(TurnPhase.END_OF_TURN);
+        expect(acceptState.pendingPlayerDeal).toBeNull();
+        // Log should contain acceptance message
+        const hasAcceptLog = acceptState.log.some(
+          (log: any) => log.message.includes('accepted'),
+        );
+        expect(hasAcceptLog).toBe(true);
+      });
+
+      it('rejects OFFER_DEAL_TO_PLAYER when not in MAKE_DECISION phase', async () => {
+        const c1 = makeClient();
+        const c2 = makeClient();
+        await Promise.all([connectClient(c1), connectClient(c2)]);
+
+        const { state } = await startGameForV2(c1, c2);
+
+        // Game starts in ROLL_DICE phase
+        const currentPlayerId = state.players[state.currentPlayerIndex].id;
+        const currentClient = currentPlayerId === 'p1' ? c1 : c2;
+
+        const errorPromise = waitForEvent<{ error: string }>(
+          currentClient,
+          'game:action_error',
+        );
+
+        currentClient.emit('game:action', {
+          playerId: currentPlayerId,
+          action: {
+            type: 'OFFER_DEAL_TO_PLAYER',
+            playerId: currentPlayerId,
+            targetPlayerId: currentPlayerId === 'p1' ? 'p2' : 'p1',
+            askingPrice: 500,
+          },
+        });
+
+        const { error } = await errorPromise;
+        expect(error).toContain('Invalid action');
+      });
+
+      it('rejects ACCEPT_PLAYER_DEAL when not in WAITING_FOR_DEAL_RESPONSE phase', async () => {
+        const c1 = makeClient();
+        const c2 = makeClient();
+        await Promise.all([connectClient(c1), connectClient(c2)]);
+
+        await startGameForV2(c1, c2);
+
+        const errorPromise = waitForEvent<{ error: string }>(
+          c2,
+          'game:action_error',
+        );
+
+        c2.emit('game:action', {
+          playerId: 'p2',
+          action: {
+            type: 'ACCEPT_PLAYER_DEAL',
+            playerId: 'p2',
+          },
+        });
+
+        const { error } = await errorPromise;
+        expect(error).toContain('Invalid action');
+      });
+    });
+
+    describe('DECLINE_PLAYER_DEAL', () => {
+      it('declines a deal offer and returns to MAKE_DECISION phase', async () => {
+        const c1 = makeClient();
+        const c2 = makeClient();
+        await Promise.all([connectClient(c1), connectClient(c2)]);
+
+        const { roomId } = await startGameForV2(c1, c2);
+
+        // Set up game state: WAITING_FOR_DEAL_RESPONSE with a pending deal
+        const session = gameManager.getSession(roomId)!;
+        const p1Index = session.getState().players.findIndex((p: any) => p.id === 'p1');
+        (session as any).state = {
+          ...session.getState(),
+          currentPlayerIndex: p1Index,
+          turnPhase: TurnPhase.WAITING_FOR_DEAL_RESPONSE,
+          activeCard: {
+            type: 'smallDeal' as const,
+            card: {
+              id: 'test-deal-card',
+              title: 'Test Stock',
+              deal: {
+                type: 'stock' as const,
+                name: 'Test Stock',
+                symbol: 'OK4U',
+                costPerShare: 10,
+                dividendPerShare: 0,
+                historicalPriceRange: { low: 5, high: 30 },
+                description: 'Test stock deal',
+                rule: 'Buy shares at this price.',
+              },
+            },
+          },
+          pendingPlayerDeal: {
+            sellerId: 'p1',
+            buyerId: 'p2',
+            card: {
+              type: 'stock' as const,
+              name: 'Test Stock',
+              symbol: 'OK4U',
+              costPerShare: 10,
+              dividendPerShare: 0,
+              historicalPriceRange: { low: 5, high: 30 },
+              description: 'Test stock deal',
+              rule: 'Buy shares at this price.',
+            },
+            askingPrice: 500,
+          },
+        };
+
+        // P2 declines the deal
+        const declineUpdatePromise = waitForEvent<{ state: any }>(
+          c2,
+          'game:state_update',
+        );
+
+        c2.emit('game:action', {
+          playerId: 'p2',
+          action: {
+            type: 'DECLINE_PLAYER_DEAL',
+            playerId: 'p2',
+          },
+        });
+
+        const { state: declineState } = await declineUpdatePromise;
+        expect(declineState.turnPhase).toBe(TurnPhase.MAKE_DECISION);
+        expect(declineState.pendingPlayerDeal).toBeNull();
+        // Log should contain decline message
+        const hasDeclineLog = declineState.log.some(
+          (log: any) => log.message.includes('declined'),
+        );
+        expect(hasDeclineLog).toBe(true);
+      });
+
+      it('rejects DECLINE_PLAYER_DEAL when not in WAITING_FOR_DEAL_RESPONSE phase', async () => {
+        const c1 = makeClient();
+        const c2 = makeClient();
+        await Promise.all([connectClient(c1), connectClient(c2)]);
+
+        await startGameForV2(c1, c2);
+
+        const errorPromise = waitForEvent<{ error: string }>(
+          c2,
+          'game:action_error',
+        );
+
+        c2.emit('game:action', {
+          playerId: 'p2',
+          action: {
+            type: 'DECLINE_PLAYER_DEAL',
+            playerId: 'p2',
+          },
+        });
+
+        const { error } = await errorPromise;
+        expect(error).toContain('Invalid action');
+      });
+
+      it('rejects DECLINE_PLAYER_DEAL from wrong player (not the buyer)', async () => {
+        const c1 = makeClient();
+        const c2 = makeClient();
+        await Promise.all([connectClient(c1), connectClient(c2)]);
+
+        const { roomId } = await startGameForV2(c1, c2);
+
+        // Set up WAITING_FOR_DEAL_RESPONSE where p2 is the buyer
+        const session = gameManager.getSession(roomId)!;
+        const p1Index = session.getState().players.findIndex((p: any) => p.id === 'p1');
+        (session as any).state = {
+          ...session.getState(),
+          currentPlayerIndex: p1Index,
+          turnPhase: TurnPhase.WAITING_FOR_DEAL_RESPONSE,
+          pendingPlayerDeal: {
+            sellerId: 'p1',
+            buyerId: 'p2',
+            card: {
+              type: 'stock' as const,
+              name: 'Test Stock',
+              symbol: 'OK4U',
+              costPerShare: 10,
+              dividendPerShare: 0,
+              historicalPriceRange: { low: 5, high: 30 },
+              description: 'Test stock deal',
+              rule: 'Buy shares at this price.',
+            },
+            askingPrice: 500,
+          },
+        };
+
+        // P1 (seller) tries to decline - should fail because p1 is NOT the buyer
+        const errorPromise = waitForEvent<{ error: string }>(
+          c1,
+          'game:action_error',
+        );
+
+        c1.emit('game:action', {
+          playerId: 'p1',
+          action: {
+            type: 'DECLINE_PLAYER_DEAL',
+            playerId: 'p1',
+          },
+        });
+
+        const { error } = await errorPromise;
+        expect(error).toContain('Invalid action');
+      });
     });
   });
 });
